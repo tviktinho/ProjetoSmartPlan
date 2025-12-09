@@ -1,0 +1,194 @@
+import type { Express, Request, Response } from "express";
+import { createServer, type Server } from "http";
+import { storage } from "./storage";
+
+export async function registerRoutes(
+  httpServer: Server,
+  app: Express
+): Promise<Server> {
+  // Auth routes
+  app.post("/api/auth/signup", async (req: Request, res: Response) => {
+    const { email, first_name, last_name, password } = req.body;
+    if (!email?.toLowerCase().endsWith("@ufu.br")) {
+      return res.status(400).json({ detail: "Only @ufu.br emails allowed" });
+    }
+    if (!password || password.length < 6) {
+      return res.status(400).json({ detail: "Password must be at least 6 characters" });
+    }
+    const existing = await storage.getUserByEmail(email);
+    if (existing) {
+      return res.status(400).json({ detail: "Email already registered" });
+    }
+    const user = await storage.createUser({
+      email: email.toLowerCase(),
+      password,
+      firstName: first_name,
+      lastName: last_name,
+    });
+    if (req.session) {
+      req.session.user = { id: user.id, email: user.email };
+    }
+    res.json(user);
+  });
+
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
+    const { email, password } = req.body;
+    if (!email?.toLowerCase().endsWith("@ufu.br")) {
+      return res.status(400).json({ detail: "Only @ufu.br emails allowed" });
+    }
+    if (!password) {
+      return res.status(400).json({ detail: "Password is required" });
+    }
+    const user = await storage.validatePassword(email.toLowerCase(), password);
+    if (!user) {
+      return res.status(401).json({ detail: "Invalid email or password" });
+    }
+    if (req.session) {
+      req.session.user = { id: user.id, email: user.email };
+    }
+    res.json(user);
+  });
+
+  app.get("/api/auth/user", (req: Request, res: Response) => {
+    if (!req.session?.user?.id) {
+      return res.status(401).json({ detail: "Unauthorized" });
+    }
+    res.json(req.session.user);
+  });
+
+  app.post("/api/logout", (req: Request, res: Response) => {
+    if (req.session) {
+      req.session.destroy(() => {
+        res.json({ success: true });
+      });
+    } else {
+      res.json({ success: true });
+    }
+  });
+
+  const checkAuth = (req: Request, res: Response) => {
+    if (!req.session?.user?.id) {
+      res.status(401).json({ detail: "Unauthorized" });
+      return null;
+    }
+    return req.session.user.id;
+  };
+
+  // Disciplines
+  app.get("/api/disciplines", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const disciplines = await storage.getDisciplines(uid);
+    res.json(disciplines);
+  });
+
+  app.post("/api/disciplines", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const discipline = await storage.createDiscipline({ ...req.body, userId: uid });
+    res.json(discipline);
+  });
+
+  app.patch("/api/disciplines/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const discipline = await storage.updateDiscipline(parseInt(req.params.id), req.body);
+    res.json(discipline);
+  });
+
+  app.delete("/api/disciplines/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    await storage.deleteDiscipline(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // Events
+  app.get("/api/events", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const events = await storage.getEvents(uid);
+    res.json(events);
+  });
+
+  app.post("/api/events", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const event = await storage.createEvent({ ...req.body, userId: uid });
+    res.json(event);
+  });
+
+  app.patch("/api/events/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const event = await storage.updateEvent(parseInt(req.params.id), req.body);
+    res.json(event);
+  });
+
+  app.delete("/api/events/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    await storage.deleteEvent(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // Tasks
+  app.get("/api/tasks", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const tasks = await storage.getTasks(uid);
+    res.json(tasks);
+  });
+
+  app.post("/api/tasks", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const task = await storage.createTask({ ...req.body, userId: uid });
+    res.json(task);
+  });
+
+  app.patch("/api/tasks/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const task = await storage.updateTask(parseInt(req.params.id), req.body);
+    res.json(task);
+  });
+
+  app.delete("/api/tasks/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    await storage.deleteTask(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // Goals
+  app.get("/api/goals", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const goals = await storage.getGoals(uid);
+    res.json(goals);
+  });
+
+  app.post("/api/goals", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const goal = await storage.createGoal({ ...req.body, userId: uid });
+    res.json(goal);
+  });
+
+  app.patch("/api/goals/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const goal = await storage.updateGoal(parseInt(req.params.id), req.body);
+    res.json(goal);
+  });
+
+  app.delete("/api/goals/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    await storage.deleteGoal(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  return httpServer;
+}

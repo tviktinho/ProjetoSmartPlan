@@ -1,0 +1,357 @@
+from fastapi import FastAPI, Depends, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+import os
+from datetime import datetime, timedelta
+from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, Date, Time, DateTime, ForeignKey, ARRAY
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session, relationship
+from pydantic import BaseModel
+from typing import Optional, List
+import uuid
+
+# Database setup
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/ufu_agenda")
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Models
+class User(Base):
+    __tablename__ = "users"
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    email = Column(String, unique=True, nullable=True)
+    first_name = Column(String, nullable=True)
+    last_name = Column(String, nullable=True)
+    profile_image_url = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    disciplines = relationship("Discipline", back_populates="user")
+    events = relationship("Event", back_populates="user")
+    tasks = relationship("Task", back_populates="user")
+    study_goals = relationship("StudyGoal", back_populates="user")
+
+class Discipline(Base):
+    __tablename__ = "disciplines"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    name = Column(String(255), nullable=False)
+    code = Column(String(50))
+    professor = Column(String(255))
+    semester = Column(String(50))
+    color = Column(String(7), default="#3B82F6")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="disciplines")
+    events = relationship("Event", back_populates="discipline")
+    tasks = relationship("Task", back_populates="discipline")
+
+class Event(Base):
+    __tablename__ = "events"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    discipline_id = Column(Integer, ForeignKey("disciplines.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    event_type = Column(String(50), nullable=False)
+    start_date = Column(Date, nullable=False)
+    start_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
+    location = Column(String(255), nullable=True)
+    is_recurring = Column(Boolean, default=False)
+    recurrence_pattern = Column(String(50), nullable=True)
+    recurrence_days = Column(ARRAY(String), nullable=True)
+    recurrence_end_date = Column(Date, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="events")
+    discipline = relationship("Discipline", back_populates="events")
+
+class Task(Base):
+    __tablename__ = "tasks"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    discipline_id = Column(Integer, ForeignKey("disciplines.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    priority = Column(String(20), default="medium", nullable=False)
+    status = Column(String(20), default="todo", nullable=False)
+    due_date = Column(Date, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="tasks")
+    discipline = relationship("Discipline", back_populates="tasks")
+
+class StudyGoal(Base):
+    __tablename__ = "study_goals"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    title = Column(String(255), nullable=False)
+    target_hours = Column(Integer, nullable=False)
+    period_type = Column(String(20), nullable=False)
+    current_hours = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="study_goals")
+
+# Pydantic models
+class UserResponse(BaseModel):
+    id: str
+    email: Optional[str]
+    first_name: Optional[str]
+    last_name: Optional[str]
+    profile_image_url: Optional[str]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class DisciplineCreate(BaseModel):
+    name: str
+    code: Optional[str] = None
+    professor: Optional[str] = None
+    semester: Optional[str] = None
+    color: str = "#3B82F6"
+
+class DisciplineResponse(DisciplineCreate):
+    id: int
+    user_id: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class EventCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    event_type: str
+    discipline_id: Optional[int] = None
+    start_date: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    location: Optional[str] = None
+    is_recurring: bool = False
+    recurrence_pattern: Optional[str] = None
+    recurrence_days: Optional[List[str]] = None
+    recurrence_end_date: Optional[str] = None
+
+class EventResponse(EventCreate):
+    id: int
+    user_id: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class TaskCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    priority: str = "medium"
+    status: str = "todo"
+    discipline_id: Optional[int] = None
+    due_date: Optional[str] = None
+
+class TaskResponse(TaskCreate):
+    id: int
+    user_id: str
+    completed_at: Optional[datetime]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class StudyGoalCreate(BaseModel):
+    title: str
+    target_hours: int
+    period_type: str
+    current_hours: int = 0
+
+class StudyGoalResponse(StudyGoalCreate):
+    id: int
+    user_id: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# Create tables
+Base.metadata.create_all(bind=engine)
+
+# Dependency
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def get_current_user(request: Request) -> str:
+    user = request.session.get("user")
+    if not user:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return user.get("id")
+
+# FastAPI app
+app = FastAPI(title="Agenda UFU", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Auth endpoints
+@app.get("/api/auth/user")
+async def get_user(request: Request, db: Session = Depends(get_db)):
+    try:
+        user_id = await get_current_user(request)
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Unauthorized")
+        return UserResponse.from_orm(user)
+    except:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+# Disciplines endpoints
+@app.get("/api/disciplines")
+async def list_disciplines(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    disciplines = db.query(Discipline).filter(Discipline.user_id == user_id).all()
+    return [DisciplineResponse.from_orm(d) for d in disciplines]
+
+@app.post("/api/disciplines")
+async def create_discipline(data: DisciplineCreate, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    discipline = Discipline(user_id=user_id, **data.dict())
+    db.add(discipline)
+    db.commit()
+    db.refresh(discipline)
+    return DisciplineResponse.from_orm(discipline)
+
+@app.patch("/api/disciplines/{id}")
+async def update_discipline(id: int, data: DisciplineCreate, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    discipline = db.query(Discipline).filter(Discipline.id == id, Discipline.user_id == user_id).first()
+    if not discipline:
+        raise HTTPException(status_code=404, detail="Not found")
+    for key, value in data.dict().items():
+        setattr(discipline, key, value)
+    db.commit()
+    db.refresh(discipline)
+    return DisciplineResponse.from_orm(discipline)
+
+@app.delete("/api/disciplines/{id}")
+async def delete_discipline(id: int, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    discipline = db.query(Discipline).filter(Discipline.id == id, Discipline.user_id == user_id).first()
+    if not discipline:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(discipline)
+    db.commit()
+    return {"success": True}
+
+# Events endpoints
+@app.get("/api/events")
+async def list_events(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    events = db.query(Event).filter(Event.user_id == user_id).all()
+    return [EventResponse.from_orm(e) for e in events]
+
+@app.post("/api/events")
+async def create_event(data: EventCreate, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    event = Event(user_id=user_id, **data.dict())
+    db.add(event)
+    db.commit()
+    db.refresh(event)
+    return EventResponse.from_orm(event)
+
+@app.patch("/api/events/{id}")
+async def update_event(id: int, data: EventCreate, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    event = db.query(Event).filter(Event.id == id, Event.user_id == user_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Not found")
+    for key, value in data.dict().items():
+        setattr(event, key, value)
+    db.commit()
+    db.refresh(event)
+    return EventResponse.from_orm(event)
+
+@app.delete("/api/events/{id}")
+async def delete_event(id: int, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    event = db.query(Event).filter(Event.id == id, Event.user_id == user_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(event)
+    db.commit()
+    return {"success": True}
+
+# Tasks endpoints
+@app.get("/api/tasks")
+async def list_tasks(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    tasks = db.query(Task).filter(Task.user_id == user_id).all()
+    return [TaskResponse.from_orm(t) for t in tasks]
+
+@app.post("/api/tasks")
+async def create_task(data: TaskCreate, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    task = Task(user_id=user_id, **data.dict())
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return TaskResponse.from_orm(task)
+
+@app.patch("/api/tasks/{id}")
+async def update_task(id: int, data: TaskCreate, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == id, Task.user_id == user_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Not found")
+    for key, value in data.dict().items():
+        setattr(task, key, value)
+    db.commit()
+    db.refresh(task)
+    return TaskResponse.from_orm(task)
+
+@app.delete("/api/tasks/{id}")
+async def delete_task(id: int, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    task = db.query(Task).filter(Task.id == id, Task.user_id == user_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(task)
+    db.commit()
+    return {"success": True}
+
+# Study Goals endpoints
+@app.get("/api/goals")
+async def list_goals(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    goals = db.query(StudyGoal).filter(StudyGoal.user_id == user_id).all()
+    return [StudyGoalResponse.from_orm(g) for g in goals]
+
+@app.post("/api/goals")
+async def create_goal(data: StudyGoalCreate, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    goal = StudyGoal(user_id=user_id, **data.dict())
+    db.add(goal)
+    db.commit()
+    db.refresh(goal)
+    return StudyGoalResponse.from_orm(goal)
+
+@app.patch("/api/goals/{id}")
+async def update_goal(id: int, data: StudyGoalCreate, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    goal = db.query(StudyGoal).filter(StudyGoal.id == id, StudyGoal.user_id == user_id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Not found")
+    for key, value in data.dict().items():
+        setattr(goal, key, value)
+    db.commit()
+    db.refresh(goal)
+    return StudyGoalResponse.from_orm(goal)
+
+@app.delete("/api/goals/{id}")
+async def delete_goal(id: int, user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
+    goal = db.query(StudyGoal).filter(StudyGoal.id == id, StudyGoal.user_id == user_id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(goal)
+    db.commit()
+    return {"success": True}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
