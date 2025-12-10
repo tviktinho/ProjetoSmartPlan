@@ -11,7 +11,7 @@ from typing import Optional, List
 import uuid
 import re
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost/ufu_agenda")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:admin@localhost/ufu_agenda")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
