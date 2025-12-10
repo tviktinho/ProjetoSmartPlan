@@ -6,15 +6,43 @@ from datetime import datetime
 from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, Date, Time, DateTime, ForeignKey, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, validator
 from typing import Optional, List
 import uuid
 import re
+
+# Adicionado: passlib para hashing de senha
+from passlib.context import CryptContext
 
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:admin@localhost/ufu_agenda")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+# Contexto de hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+# Função de validação de complexidade de senha
+def validate_password(password: str) -> bool:
+    # mínimo 8 caracteres, 1 maiúscula, 1 minúscula, 1 número e 1 símbolo
+    if len(password) < 8:
+        return False
+    if not re.search(r"[A-Z]", password):
+        return False
+    if not re.search(r"[a-z]", password):
+        return False
+    if not re.search(r"[0-9]", password):
+        return False
+    if not re.search(r"[^A-Za-z0-9]", password):
+        return False
+    return True
+
+# Utilitários de senha
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+def verify_password(password: str, password_hash: str) -> bool:
+    return pwd_context.verify(password, password_hash)
 
 class User(Base):
     __tablename__ = "users"
@@ -25,6 +53,8 @@ class User(Base):
     profile_image_url = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
+    # Novo campo: hash da senha
+    password_hash = Column(String, nullable=True)
 
 class Discipline(Base):
     __tablename__ = "disciplines"
@@ -90,10 +120,18 @@ def get_db():
 def validate_ufu_email(email: str) -> bool:
     return email.lower().endswith("@ufu.br")
 
+# Atualizado: incluir senha no signup com validação
 class UserSignup(BaseModel):
     email: str
     first_name: str
     last_name: str
+    password: str
+
+    @validator("password")
+    def _check_password(cls, v):
+        if not validate_password(v):
+            raise ValueError("Senha inválida: mínimo 8 caracteres, com maiúscula, minúscula, número e símbolo.")
+        return v
 
 class UserResponse(BaseModel):
     id: str
@@ -159,24 +197,34 @@ async def signup(data: UserSignup, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
+    # validação e hashing da senha
+    if not validate_password(data.password):
+        raise HTTPException(status_code=400, detail="Senha inválida: mínimo 8 caracteres, com maiúscula, minúscula, número e símbolo.")
+    
     user = User(
         id=str(uuid.uuid4()),
         email=data.email.lower(),
         first_name=data.first_name,
-        last_name=data.last_name
+        last_name=data.last_name,
+        password_hash=hash_password(data.password)
     )
     db.add(user)
     db.commit()
     db.refresh(user)
     return UserResponse.from_orm(user)
 
+# Atualizado: schema de login com senha
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
 @app.post("/api/auth/login")
-async def login(data: UserSignup, request: Request, db: Session = Depends(get_db)):
+async def login(data: UserLogin, request: Request, db: Session = Depends(get_db)):
     if not validate_ufu_email(data.email):
         raise HTTPException(status_code=400, detail="Only @ufu.br email addresses are allowed")
     
     user = db.query(User).filter(User.email == data.email.lower()).first()
-    if not user:
+    if not user or not user.password_hash or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     request.session["user"] = {"id": user.id, "email": user.email}

@@ -9,18 +9,27 @@ export async function registerRoutes(
   // Auth routes
   app.post("/api/auth/signup", async (req: Request, res: Response) => {
     const { email, first_name, last_name, password } = req.body;
-    if (!email?.toLowerCase().endsWith("@ufu.br")) {
+    const normalizedEmail = (email || "").toLowerCase();
+    if (!normalizedEmail.endsWith("@ufu.br")) {
       return res.status(400).json({ detail: "Only @ufu.br emails allowed" });
     }
-    if (!password || password.length < 6) {
-      return res.status(400).json({ detail: "Password must be at least 6 characters" });
+    // Validação de complexidade de senha
+    const complex = typeof password === "string"
+      && password.length >= 8
+      && /[A-Z]/.test(password)
+      && /[a-z]/.test(password)
+      && /[0-9]/.test(password)
+      && /[^A-Za-z0-9]/.test(password);
+    if (!complex) {
+      return res.status(400).json({ detail: "Senha inválida: mínimo 8 caracteres, com maiúscula, minúscula, número e símbolo." });
     }
-    const existing = await storage.getUserByEmail(email);
+    // Checagem de email existente com normalização
+    const existing = await storage.getUserByEmail(normalizedEmail);
     if (existing) {
       return res.status(400).json({ detail: "Email already registered" });
     }
     const user = await storage.createUser({
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       password,
       firstName: first_name,
       lastName: last_name,
@@ -28,25 +37,44 @@ export async function registerRoutes(
     if (req.session) {
       req.session.user = { id: user.id, email: user.email };
     }
-    res.json(user);
+    // Nunca retornar senha
+    res.json({
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      profileImageUrl: user.profileImageUrl,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    });
   });
 
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     const { email, password } = req.body;
-    if (!email?.toLowerCase().endsWith("@ufu.br")) {
+    const normalizedEmail = (email || "").toLowerCase();
+    if (!normalizedEmail.endsWith("@ufu.br")) {
       return res.status(400).json({ detail: "Only @ufu.br emails allowed" });
     }
     if (!password) {
       return res.status(400).json({ detail: "Password is required" });
     }
-    const user = await storage.validatePassword(email.toLowerCase(), password);
+    const user = await storage.validatePassword(normalizedEmail, password);
     if (!user) {
       return res.status(401).json({ detail: "Invalid email or password" });
     }
     if (req.session) {
       req.session.user = { id: user.id, email: user.email };
     }
-    res.json(user);
+    // Nunca retornar senha
+    res.json({
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      profileImageUrl: user.profileImageUrl,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    });
   });
 
   app.get("/api/auth/user", (req: Request, res: Response) => {
