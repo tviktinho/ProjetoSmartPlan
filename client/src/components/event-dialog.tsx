@@ -87,7 +87,7 @@ export function EventDialog({
       title: "",
       description: "",
       eventType: "aula",
-      disciplineId: "",
+      disciplineId: "none",
       startDate: "",
       startTime: "",
       endTime: "",
@@ -107,7 +107,7 @@ export function EventDialog({
         title: event.title,
         description: event.description || "",
         eventType: event.eventType,
-        disciplineId: event.disciplineId?.toString() || "",
+        disciplineId: event.disciplineId?.toString() || "none",
         startDate: event.startDate,
         startTime: event.startTime || "",
         endTime: event.endTime || "",
@@ -122,7 +122,7 @@ export function EventDialog({
         title: "",
         description: "",
         eventType: "aula",
-        disciplineId: "",
+        disciplineId: "none",
         startDate: format(selectedDate, "yyyy-MM-dd"),
         startTime: "",
         endTime: "",
@@ -139,7 +139,7 @@ export function EventDialog({
     mutationFn: async (data: FormData) => {
       const payload = {
         ...data,
-        disciplineId: data.disciplineId ? parseInt(data.disciplineId) : null,
+        disciplineId: (data.disciplineId && data.disciplineId !== "none") ? parseInt(data.disciplineId) : null,
         startTime: data.startTime || null,
         endTime: data.endTime || null,
         location: data.location || null,
@@ -172,7 +172,7 @@ export function EventDialog({
     mutationFn: async (data: FormData) => {
       const payload = {
         ...data,
-        disciplineId: data.disciplineId ? parseInt(data.disciplineId) : null,
+        disciplineId: (data.disciplineId && data.disciplineId !== "none") ? parseInt(data.disciplineId) : null,
         startTime: data.startTime || null,
         endTime: data.endTime || null,
         location: data.location || null,
@@ -303,7 +303,7 @@ export function EventDialog({
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="">Nenhuma</SelectItem>
+                        <SelectItem value="none">Nenhuma</SelectItem>
                         {disciplines.map((d) => (
                           <SelectItem key={d.id} value={d.id.toString()}>
                             {d.name}
