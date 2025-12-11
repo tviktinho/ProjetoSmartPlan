@@ -288,7 +288,11 @@ export async function registerRoutes(
   app.post("/api/attendances", async (req: Request, res: Response) => {
     const uid = checkAuth(req, res);
     if (!uid) return;
-    const attendance = await storage.createAttendance({ ...req.body, userId: uid });
+    const attendance = await storage.createAttendance({ 
+      ...req.body, 
+      userId: uid,
+      disciplineId: req.body.discipline_id || req.body.disciplineId
+    });
     res.json(attendance);
   });
 
