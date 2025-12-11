@@ -60,12 +60,16 @@ export class MemStorage implements IStorage {
   private tasks: Map<number, Task> = new Map();
   private goals: Map<number, StudyGoal> = new Map();
   private reminders: Map<number, Reminder> = new Map();
-  private meetings: Map<number, Meeting> = new Map();  private attendances: Map<number, Attendance> = new Map();  private nextDisciplineId = 1;
+  private meetings: Map<number, Meeting> = new Map();
+  private attendances: Map<number, Attendance> = new Map();
+  
+  private nextDisciplineId = 1;
   private nextEventId = 1;
   private nextTaskId = 1;
   private nextGoalId = 1;
   private nextReminderId = 1;
   private nextMeetingId = 1;
+  private nextAttendanceId = 1;
 
   async getUser(id: string): Promise<User | undefined> {
     return this.users.get(id);
@@ -322,7 +326,7 @@ export class MemStorage implements IStorage {
   }
 
   async createAttendance(attendance: Partial<Attendance>): Promise<Attendance> {
-    const id = this.nextId++;
+    const id = this.nextAttendanceId++;
     const newAttendance: Attendance = {
       id,
       userId: attendance.userId || "",
