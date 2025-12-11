@@ -1,4 +1,4 @@
-import { type User, type Discipline, type Event, type Task, type StudyGoal } from "@shared/schema";
+import { type User, type Discipline, type Event, type Task, type StudyGoal, type Reminder, type Meeting } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 
@@ -32,6 +32,18 @@ export interface IStorage {
   createGoal(goal: Partial<StudyGoal>): Promise<StudyGoal>;
   updateGoal(id: number, data: Partial<StudyGoal>): Promise<StudyGoal>;
   deleteGoal(id: number): Promise<void>;
+
+  // Reminders
+  getReminders(userId: string): Promise<Reminder[]>;
+  createReminder(reminder: Partial<Reminder>): Promise<Reminder>;
+  updateReminder(id: number, data: Partial<Reminder>): Promise<Reminder>;
+  deleteReminder(id: number): Promise<void>;
+
+  // Meetings
+  getMeetings(userId: string): Promise<Meeting[]>;
+  createMeeting(meeting: Partial<Meeting>): Promise<Meeting>;
+  updateMeeting(id: number, data: Partial<Meeting>): Promise<Meeting>;
+  deleteMeeting(id: number): Promise<void>;
 }
 
 export class MemStorage implements IStorage {
@@ -40,10 +52,14 @@ export class MemStorage implements IStorage {
   private events: Map<number, Event> = new Map();
   private tasks: Map<number, Task> = new Map();
   private goals: Map<number, StudyGoal> = new Map();
+  private reminders: Map<number, Reminder> = new Map();
+  private meetings: Map<number, Meeting> = new Map();
   private nextDisciplineId = 1;
   private nextEventId = 1;
   private nextTaskId = 1;
   private nextGoalId = 1;
+  private nextReminderId = 1;
+  private nextMeetingId = 1;
 
   async getUser(id: string): Promise<User | undefined> {
     return this.users.get(id);
@@ -61,9 +77,9 @@ export class MemStorage implements IStorage {
       id: randomUUID(),
       email: data.email || "",
       password: hashedPassword,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      profileImageUrl: data.profileImageUrl,
+      firstName: data.firstName ?? null,
+      lastName: data.lastName ?? null,
+      profileImageUrl: data.profileImageUrl ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -87,9 +103,9 @@ export class MemStorage implements IStorage {
       id: this.nextDisciplineId++,
       userId: data.userId || "",
       name: data.name || "",
-      code: data.code,
-      professor: data.professor,
-      semester: data.semester,
+      code: data.code ?? null,
+      professor: data.professor ?? null,
+      semester: data.semester ?? null,
       color: data.color || "#3B82F6",
       createdAt: new Date(),
     };
@@ -117,18 +133,18 @@ export class MemStorage implements IStorage {
     const event: Event = {
       id: this.nextEventId++,
       userId: data.userId || "",
-      disciplineId: data.disciplineId,
+      disciplineId: data.disciplineId ?? null,
       title: data.title || "",
-      description: data.description,
+      description: data.description ?? null,
       eventType: data.eventType || "aula",
       startDate: data.startDate || "",
-      startTime: data.startTime,
-      endTime: data.endTime,
-      location: data.location,
+      startTime: data.startTime ?? null,
+      endTime: data.endTime ?? null,
+      location: data.location ?? null,
       isRecurring: data.isRecurring || false,
-      recurrencePattern: data.recurrencePattern,
-      recurrenceDays: data.recurrenceDays,
-      recurrenceEndDate: data.recurrenceEndDate,
+      recurrencePattern: data.recurrencePattern ?? null,
+      recurrenceDays: data.recurrenceDays ?? null,
+      recurrenceEndDate: data.recurrenceEndDate ?? null,
       createdAt: new Date(),
     };
     this.events.set(event.id, event);
@@ -155,13 +171,13 @@ export class MemStorage implements IStorage {
     const task: Task = {
       id: this.nextTaskId++,
       userId: data.userId || "",
-      disciplineId: data.disciplineId,
+      disciplineId: data.disciplineId ?? null,
       title: data.title || "",
-      description: data.description,
+      description: data.description ?? null,
       priority: data.priority || "medium",
       status: data.status || "todo",
-      dueDate: data.dueDate,
-      completedAt: data.completedAt,
+      dueDate: data.dueDate ?? null,
+      completedAt: data.completedAt ?? null,
       createdAt: new Date(),
     };
     this.tasks.set(task.id, task);
@@ -208,6 +224,87 @@ export class MemStorage implements IStorage {
 
   async deleteGoal(id: number): Promise<void> {
     this.goals.delete(id);
+  }
+
+  // Reminders
+  async getReminders(userId: string): Promise<Reminder[]> {
+    return Array.from(this.reminders.values()).filter((r) => r.userId === userId);
+  }
+
+  async createReminder(data: Partial<Reminder>): Promise<Reminder> {
+    const reminder: Reminder = {
+      id: this.nextReminderId++,
+      userId: data.userId || "",
+      disciplineId: data.disciplineId ?? null,
+      title: data.title || "",
+      description: data.description ?? null,
+      reminderType: data.reminderType || "prazo",
+      dueDate: data.dueDate || "",
+      dueTime: data.dueTime ?? null,
+      priority: data.priority || "medium",
+      notificationEnabled: data.notificationEnabled ?? true,
+      reminderTime: data.reminderTime ?? null,
+      status: data.status || "pending",
+      completedAt: data.completedAt ?? null,
+      createdAt: new Date(),
+    };
+    this.reminders.set(reminder.id, reminder);
+    return reminder;
+  }
+
+  async updateReminder(id: number, data: Partial<Reminder>): Promise<Reminder> {
+    const reminder = this.reminders.get(id);
+    if (!reminder) throw new Error("Not found");
+    const updated = { ...reminder, ...data };
+    this.reminders.set(id, updated);
+    return updated;
+  }
+
+  async deleteReminder(id: number): Promise<void> {
+    this.reminders.delete(id);
+  }
+
+  // Meetings
+  async getMeetings(userId: string): Promise<Meeting[]> {
+    return Array.from(this.meetings.values()).filter((m) => m.userId === userId);
+  }
+
+  async createMeeting(data: Partial<Meeting>): Promise<Meeting> {
+    const meeting: Meeting = {
+      id: this.nextMeetingId++,
+      userId: data.userId || "",
+      disciplineId: data.disciplineId ?? null,
+      title: data.title || "",
+      description: data.description ?? null,
+      meetingType: data.meetingType || "outro",
+      startDate: data.startDate || "",
+      startTime: data.startTime || "",
+      endTime: data.endTime ?? null,
+      location: data.location ?? null,
+      participants: data.participants ?? null,
+      isRecurring: data.isRecurring || false,
+      recurrencePattern: data.recurrencePattern ?? null,
+      recurrenceDays: data.recurrenceDays ?? null,
+      recurrenceEndDate: data.recurrenceEndDate ?? null,
+      videoCallUrl: data.videoCallUrl ?? null,
+      notesUrl: data.notesUrl ?? null,
+      status: data.status || "scheduled",
+      createdAt: new Date(),
+    };
+    this.meetings.set(meeting.id, meeting);
+    return meeting;
+  }
+
+  async updateMeeting(id: number, data: Partial<Meeting>): Promise<Meeting> {
+    const meeting = this.meetings.get(id);
+    if (!meeting) throw new Error("Not found");
+    const updated = { ...meeting, ...data };
+    this.meetings.set(id, updated);
+    return updated;
+  }
+
+  async deleteMeeting(id: number): Promise<void> {
+    this.meetings.delete(id);
   }
 }
 

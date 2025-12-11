@@ -218,5 +218,63 @@ export async function registerRoutes(
     res.json({ ok: true });
   });
 
+  // Reminders
+  app.get("/api/reminders", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const reminders = await storage.getReminders(uid);
+    res.json(reminders);
+  });
+
+  app.post("/api/reminders", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const reminder = await storage.createReminder({ ...req.body, userId: uid });
+    res.json(reminder);
+  });
+
+  app.patch("/api/reminders/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const reminder = await storage.updateReminder(parseInt(req.params.id), req.body);
+    res.json(reminder);
+  });
+
+  app.delete("/api/reminders/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    await storage.deleteReminder(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // Meetings
+  app.get("/api/meetings", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const meetings = await storage.getMeetings(uid);
+    res.json(meetings);
+  });
+
+  app.post("/api/meetings", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const meeting = await storage.createMeeting({ ...req.body, userId: uid });
+    res.json(meeting);
+  });
+
+  app.patch("/api/meetings/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const meeting = await storage.updateMeeting(parseInt(req.params.id), req.body);
+    res.json(meeting);
+  });
+
+  app.delete("/api/meetings/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    await storage.deleteMeeting(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
   return httpServer;
 }

@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2, CheckCircle2, Circle } from "lucide-react";
+import { Plus, Trash2, CheckCircle2, Circle, Bell, BellOff, ChevronDown, ChevronUp } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -16,9 +16,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import type { Reminder } from "@shared/schema";
 import { ReminderDialog } from "@/components/reminder-dialog";
 import { useToast } from "@/hooks/use-toast";
+
+// Função para parsear data no formato YYYY-MM-DD como data local (não UTC)
+function parseLocalDate(dateStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+// Função para criar datetime combinando data e hora
+function parseLocalDateTime(dateStr: string, timeStr?: string | null): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  if (timeStr) {
+    const [hours, minutes] = timeStr.split(":").map(Number);
+    return new Date(year, month - 1, day, hours, minutes);
+  }
+  return new Date(year, month - 1, day, 23, 59, 59); // Fim do dia se não houver hora
+}
+
+// Intervalos de notificação em minutos
+const NOTIFICATION_INTERVALS = [15, 5, 3, 1];
 
 function RemindersPage() {
   const { toast } = useToast();
@@ -27,6 +51,11 @@ function RemindersPage() {
   const [selectedReminder, setSelectedReminder] = useState<Reminder | undefined>();
   const [filterType, setFilterType] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  
+  // Rastrear notificações já enviadas para evitar duplicatas
+  const notifiedReminders = useRef<Set<string>>(new Set());
 
   const { data: reminders = [], isLoading } = useQuery({
     queryKey: ["reminders"],
@@ -35,6 +64,7 @@ function RemindersPage() {
       if (!response.ok) throw new Error("Erro ao carregar lembretes");
       return response.json();
     },
+    refetchInterval: 30000, // Atualizar a cada 30 segundos
   });
 
   const { data: disciplines = [] } = useQuery({
@@ -60,15 +90,34 @@ function RemindersPage() {
 
   const toggleStatusMutation = useMutation({
     mutationFn: async (reminder: Reminder) => {
-      const newStatus = reminder.status === "pending" ? "completed" : "pending";
+      const newStatus = reminder.status === "completed" ? "pending" : "completed";
       const response = await fetch(`/api/reminders/${reminder.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...reminder,
           status: newStatus,
           completedAt: newStatus === "completed" ? new Date().toISOString() : null,
         }),
+      });
+      if (!response.ok) throw new Error("Erro ao atualizar status");
+      return response.json();
+    },
+    onSuccess: (_, reminder) => {
+      queryClient.invalidateQueries({ queryKey: ["reminders"] });
+      const newStatus = reminder.status === "completed" ? "pendente" : "concluído";
+      toast({ 
+        title: "Status atualizado", 
+        description: `Lembrete marcado como ${newStatus}` 
+      });
+    },
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      const response = await fetch(`/api/reminders/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
       });
       if (!response.ok) throw new Error("Erro ao atualizar status");
       return response.json();
@@ -77,6 +126,107 @@ function RemindersPage() {
       queryClient.invalidateQueries({ queryKey: ["reminders"] });
     },
   });
+
+  // Solicitar permissão para notificações
+  const requestNotificationPermission = useCallback(async () => {
+    if (!("Notification" in window)) {
+      toast({
+        title: "Notificações não suportadas",
+        description: "Seu navegador não suporta notificações.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      setNotificationsEnabled(true);
+      toast({
+        title: "Notificações ativadas",
+        description: "Você receberá alertas para seus lembretes.",
+      });
+    } else {
+      toast({
+        title: "Permissão negada",
+        description: "Ative as notificações nas configurações do navegador.",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
+
+  // Verificar permissão de notificação ao carregar
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "granted") {
+      setNotificationsEnabled(true);
+    }
+  }, []);
+
+  // Enviar notificação
+  const sendNotification = useCallback((title: string, body: string, tag: string) => {
+    if (notificationsEnabled && "Notification" in window && Notification.permission === "granted") {
+      new Notification(title, {
+        body,
+        icon: "/favicon.png",
+        tag, // Evita notificações duplicadas com o mesmo tag
+        requireInteraction: true,
+      });
+    }
+  }, [notificationsEnabled]);
+
+  // Sistema de verificação de status e notificações
+  useEffect(() => {
+    const checkReminders = () => {
+      const now = new Date();
+
+      reminders.forEach((reminder: Reminder) => {
+        if (reminder.status === "completed") return;
+
+        const dueDateTime = parseLocalDateTime(reminder.dueDate, reminder.dueTime);
+        const diffMs = dueDateTime.getTime() - now.getTime();
+        const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+        // Verificar se está atrasado e atualizar status
+        if (diffMs < 0 && reminder.status === "pending") {
+          updateStatusMutation.mutate({ id: reminder.id, status: "overdue" });
+        }
+
+        // Verificar notificações
+        if (notificationsEnabled && reminder.notificationEnabled) {
+          NOTIFICATION_INTERVALS.forEach((interval) => {
+            const notificationKey = `${reminder.id}-${interval}`;
+            
+            // Enviar notificação se estiver no intervalo correto (com tolerância de 1 minuto)
+            if (
+              diffMinutes <= interval &&
+              diffMinutes > interval - 1 &&
+              !notifiedReminders.current.has(notificationKey)
+            ) {
+              notifiedReminders.current.add(notificationKey);
+              
+              const timeText = interval === 1 ? "1 minuto" : `${interval} minutos`;
+              sendNotification(
+                `⏰ ${reminder.title}`,
+                `Faltam ${timeText} para: ${getReminderTypeLabel(reminder.reminderType).replace(/[^\w\s]/g, '')}`,
+                notificationKey
+              );
+
+              // Mostrar toast também
+              toast({
+                title: `⏰ Lembrete em ${timeText}`,
+                description: reminder.title,
+              });
+            }
+          });
+        }
+      });
+    };
+
+    // Verificar imediatamente e depois a cada 30 segundos
+    checkReminders();
+    const interval = setInterval(checkReminders, 30000);
+
+    return () => clearInterval(interval);
+  }, [reminders, notificationsEnabled, updateStatusMutation, sendNotification, toast]);
 
   const filteredReminders = useMemo(() => {
     return reminders.filter((r: Reminder) => {
@@ -89,36 +239,42 @@ function RemindersPage() {
 
   const sortedReminders = useMemo(() => {
     return [...filteredReminders].sort((a: Reminder, b: Reminder) => {
-      const dateA = new Date(a.dueDate);
-      const dateB = new Date(b.dueDate);
+      const dateA = parseLocalDateTime(a.dueDate, a.dueTime);
+      const dateB = parseLocalDateTime(b.dueDate, b.dueTime);
       return dateA.getTime() - dateB.getTime();
     });
   }, [filteredReminders]);
 
   const getRemindersGrouped = useMemo(() => {
     const now = new Date();
-    now.setHours(0, 0, 0, 0);
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
 
     const today: Reminder[] = [];
     const upcoming: Reminder[] = [];
     const overdue: Reminder[] = [];
+    const completed: Reminder[] = [];
 
     sortedReminders.forEach((reminder: Reminder) => {
-      const dueDate = new Date(reminder.dueDate);
-      dueDate.setHours(0, 0, 0, 0);
+      // Lembretes concluídos vão para a seção de concluídos
+      if (reminder.status === "completed") {
+        completed.push(reminder);
+        return;
+      }
 
-      if (reminder.status === "completed") return;
+      const dueDateTime = parseLocalDateTime(reminder.dueDate, reminder.dueTime);
 
-      if (dueDate.getTime() < now.getTime()) {
+      // Verificar se está atrasado (passou do horário)
+      if (dueDateTime.getTime() < now.getTime() || reminder.status === "overdue") {
         overdue.push(reminder);
-      } else if (dueDate.getTime() === now.getTime()) {
+      } else if (dueDateTime >= todayStart && dueDateTime < tomorrowStart) {
         today.push(reminder);
       } else {
         upcoming.push(reminder);
       }
     });
 
-    return { today, upcoming, overdue };
+    return { today, upcoming, overdue, completed };
   }, [sortedReminders]);
 
   const getReminderTypeLabel = (type: string) => {
@@ -144,6 +300,15 @@ function RemindersPage() {
     }
   };
 
+  const formatDateTime = (dateStr: string, timeStr?: string | null) => {
+    const date = parseLocalDate(dateStr);
+    const dateFormatted = date.toLocaleDateString("pt-BR");
+    if (timeStr) {
+      return `${dateFormatted} às ${timeStr}`;
+    }
+    return dateFormatted;
+  };
+
   const handleEditReminder = (reminder: Reminder) => {
     setSelectedReminder(reminder);
     setDialogOpen(true);
@@ -153,6 +318,69 @@ function RemindersPage() {
     setSelectedReminder(undefined);
     setDialogOpen(true);
   };
+
+  // Componente de card de lembrete reutilizável
+  const ReminderCard = ({ reminder, borderColor }: { reminder: Reminder; borderColor: string }) => (
+    <Card key={reminder.id} className={borderColor}>
+      <CardContent className="pt-6">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <div className="flex items-start gap-3">
+              <button
+                className="mt-1 flex-shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleStatusMutation.mutate(reminder);
+                }}
+              >
+                {reminder.status === "completed" ? (
+                  <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
+                ) : (
+                  <Circle className={`w-5 h-5 ${
+                    reminder.status === "overdue" ? "text-red-400" : 
+                    borderColor.includes("blue") ? "text-blue-600 dark:text-blue-400" : "text-gray-400"
+                  }`} />
+                )}
+              </button>
+              <div className="flex-1">
+                <p className={`font-medium ${reminder.status === "completed" ? "line-through text-muted-foreground" : ""}`}>
+                  {reminder.title}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {getReminderTypeLabel(reminder.reminderType)} • {formatDateTime(reminder.dueDate, reminder.dueTime)}
+                </p>
+                {reminder.description && (
+                  <p className="text-sm text-muted-foreground mt-1">{reminder.description}</p>
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {reminder.notificationEnabled && (
+              <Bell className="w-4 h-4 text-muted-foreground" />
+            )}
+            <span className={`text-xs font-semibold ${getPriorityColor(reminder.priority || "medium")}`}>
+              {(reminder.priority || "medium").toUpperCase()}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => handleEditReminder(reminder)}
+            >
+              ✏️
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => deleteMutation.mutate(reminder.id)}
+            >
+              <Trash2 className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   if (isLoading) {
     return <div className="flex items-center justify-center h-96">Carregando...</div>;
@@ -168,10 +396,24 @@ function RemindersPage() {
               Gerencie provas, trabalhos e prazos importantes
             </p>
           </div>
-          <Button onClick={handleNewReminder}>
-            <Plus className="w-4 h-4 mr-2" />
-            Novo Lembrete
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant={notificationsEnabled ? "default" : "outline"}
+              size="icon"
+              onClick={requestNotificationPermission}
+              title={notificationsEnabled ? "Notificações ativadas" : "Ativar notificações"}
+            >
+              {notificationsEnabled ? (
+                <Bell className="w-4 h-4" />
+              ) : (
+                <BellOff className="w-4 h-4" />
+              )}
+            </Button>
+            <Button onClick={handleNewReminder}>
+              <Plus className="w-4 h-4 mr-2" />
+              Novo Lembrete
+            </Button>
+          </div>
         </div>
 
         <div className="flex gap-3 flex-wrap">
@@ -202,203 +444,90 @@ function RemindersPage() {
         </div>
       </div>
 
+      {/* Atrasados */}
       {getRemindersGrouped.overdue.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-red-600 dark:text-red-400">
-            ⚠️ Atrasados
+            ⚠️ Atrasados ({getRemindersGrouped.overdue.length})
           </h2>
           <div className="grid gap-3">
             {getRemindersGrouped.overdue.map((reminder) => (
-              <Card key={reminder.id} className="border-red-200 dark:border-red-900">
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div
-                      className="flex-1 cursor-pointer"
-                      onClick={() =>
-                        toggleStatusMutation.mutate(reminder)
-                      }
-                    >
-                      <div className="flex items-start gap-3">
-                        <button
-                          className="mt-1 flex-shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleStatusMutation.mutate(reminder);
-                          }}
-                        >
-                          {reminder.status === "completed" ? (
-                            <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
-                          ) : (
-                            <Circle className="w-5 h-5 text-gray-400" />
-                          )}
-                        </button>
-                        <div className="flex-1">
-                          <p className="font-medium line-through opacity-60">
-                            {reminder.title}
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            {getReminderTypeLabel(reminder.reminderType)} •{" "}
-                            {new Date(reminder.dueDate).toLocaleDateString(
-                              "pt-BR"
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-semibold ${getPriorityColor(reminder.priority)}`}>
-                        {reminder.priority.toUpperCase()}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteMutation.mutate(reminder.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <ReminderCard 
+                key={reminder.id} 
+                reminder={reminder} 
+                borderColor="border-red-200 dark:border-red-900" 
+              />
             ))}
           </div>
         </div>
       )}
 
+      {/* Hoje */}
       {getRemindersGrouped.today.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-blue-600 dark:text-blue-400">
-            📅 Hoje
+            📅 Hoje ({getRemindersGrouped.today.length})
           </h2>
           <div className="grid gap-3">
             {getRemindersGrouped.today.map((reminder) => (
-              <Card key={reminder.id} className="border-blue-200 dark:border-blue-900">
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div
-                      className="flex-1 cursor-pointer"
-                      onClick={() =>
-                        toggleStatusMutation.mutate(reminder)
-                      }
-                    >
-                      <div className="flex items-start gap-3">
-                        <button
-                          className="mt-1 flex-shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleStatusMutation.mutate(reminder);
-                          }}
-                        >
-                          {reminder.status === "completed" ? (
-                            <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
-                          ) : (
-                            <Circle className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                          )}
-                        </button>
-                        <div className="flex-1">
-                          <p className="font-medium">{reminder.title}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {getReminderTypeLabel(reminder.reminderType)}
-                            {reminder.dueTime && ` • ${reminder.dueTime}`}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-semibold ${getPriorityColor(reminder.priority)}`}>
-                        {reminder.priority.toUpperCase()}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleEditReminder(reminder)}
-                      >
-                        ✏️
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteMutation.mutate(reminder.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <ReminderCard 
+                key={reminder.id} 
+                reminder={reminder} 
+                borderColor="border-blue-200 dark:border-blue-900" 
+              />
             ))}
           </div>
         </div>
       )}
 
+      {/* Próximos */}
       {getRemindersGrouped.upcoming.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-green-600 dark:text-green-400">
-            📍 Próximos
+            📍 Próximos ({getRemindersGrouped.upcoming.length})
           </h2>
           <div className="grid gap-3">
             {getRemindersGrouped.upcoming.map((reminder) => (
-              <Card key={reminder.id} className="border-green-200 dark:border-green-900">
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between gap-4">
-                    <div
-                      className="flex-1 cursor-pointer"
-                      onClick={() =>
-                        toggleStatusMutation.mutate(reminder)
-                      }
-                    >
-                      <div className="flex items-start gap-3">
-                        <button
-                          className="mt-1 flex-shrink-0"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleStatusMutation.mutate(reminder);
-                          }}
-                        >
-                          {reminder.status === "completed" ? (
-                            <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />
-                          ) : (
-                            <Circle className="w-5 h-5 text-gray-400" />
-                          )}
-                        </button>
-                        <div className="flex-1">
-                          <p className="font-medium">{reminder.title}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {getReminderTypeLabel(reminder.reminderType)} •{" "}
-                            {new Date(reminder.dueDate).toLocaleDateString(
-                              "pt-BR"
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-semibold ${getPriorityColor(reminder.priority)}`}>
-                        {reminder.priority.toUpperCase()}
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleEditReminder(reminder)}
-                      >
-                        ✏️
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => deleteMutation.mutate(reminder.id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+              <ReminderCard 
+                key={reminder.id} 
+                reminder={reminder} 
+                borderColor="border-green-200 dark:border-green-900" 
+              />
             ))}
           </div>
         </div>
       )}
 
+      {/* Concluídos - Seção colapsável */}
+      {getRemindersGrouped.completed.length > 0 && (
+        <Collapsible open={showCompleted} onOpenChange={setShowCompleted}>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" className="w-full justify-between p-3 h-auto">
+              <h2 className="text-lg font-semibold text-gray-600 dark:text-gray-400">
+                ✅ Concluídos ({getRemindersGrouped.completed.length})
+              </h2>
+              {showCompleted ? (
+                <ChevronUp className="w-5 h-5" />
+              ) : (
+                <ChevronDown className="w-5 h-5" />
+              )}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="space-y-3 mt-3">
+            <div className="grid gap-3">
+              {getRemindersGrouped.completed.map((reminder) => (
+                <ReminderCard 
+                  key={reminder.id} 
+                  reminder={reminder} 
+                  borderColor="border-gray-200 dark:border-gray-800" 
+                />
+              ))}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
+
+      {/* Mensagem quando não há lembretes */}
       {sortedReminders.length === 0 && (
         <Card>
           <CardContent className="pt-12 text-center">
