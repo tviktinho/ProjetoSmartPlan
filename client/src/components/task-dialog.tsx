@@ -66,7 +66,7 @@ export function TaskDialog({
       description: "",
       priority: "medium",
       status: "todo",
-      disciplineId: "",
+      disciplineId: "none",
       dueDate: "",
     },
   });
@@ -78,7 +78,7 @@ export function TaskDialog({
         description: task.description || "",
         priority: task.priority,
         status: task.status,
-        disciplineId: task.disciplineId?.toString() || "",
+        disciplineId: task.disciplineId?.toString() || "none",
         dueDate: task.dueDate || "",
       });
     } else {
@@ -87,7 +87,7 @@ export function TaskDialog({
         description: "",
         priority: "medium",
         status: "todo",
-        disciplineId: "",
+        disciplineId: "none",
         dueDate: "",
       });
     }
@@ -97,7 +97,10 @@ export function TaskDialog({
     mutationFn: async (data: FormData) => {
       const payload = {
         ...data,
-        disciplineId: data.disciplineId ? parseInt(data.disciplineId) : null,
+        disciplineId:
+          data.disciplineId && data.disciplineId !== "none"
+            ? parseInt(data.disciplineId)
+            : null,
         description: data.description || null,
         dueDate: data.dueDate || null,
       };
@@ -125,7 +128,10 @@ export function TaskDialog({
     mutationFn: async (data: FormData) => {
       const payload = {
         ...data,
-        disciplineId: data.disciplineId ? parseInt(data.disciplineId) : null,
+        disciplineId:
+          data.disciplineId && data.disciplineId !== "none"
+            ? parseInt(data.disciplineId)
+            : null,
         description: data.description || null,
         dueDate: data.dueDate || null,
       };
@@ -271,7 +277,7 @@ export function TaskDialog({
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="">Nenhuma</SelectItem>
+                      <SelectItem value="none">Nenhuma</SelectItem>
                       {disciplines.map((d) => (
                         <SelectItem key={d.id} value={d.id.toString()}>
                           {d.name}
