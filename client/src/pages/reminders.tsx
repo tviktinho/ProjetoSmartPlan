@@ -68,7 +68,7 @@ function RemindersPage() {
   });
 
   const { data: disciplines = [] } = useQuery({
-    queryKey: ["disciplines"],
+    queryKey: ["/api/disciplines"],
     queryFn: async () => {
       const response = await fetch("/api/disciplines");
       if (!response.ok) throw new Error("Erro ao carregar disciplinas");

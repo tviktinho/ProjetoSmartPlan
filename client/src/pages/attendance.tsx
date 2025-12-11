@@ -55,7 +55,7 @@ export default function AttendancePage() {
 
   // Fetch disciplines
   const { data: disciplines = [] } = useQuery<Discipline[]>({
-    queryKey: ["disciplines"],
+    queryKey: ["/api/disciplines"],
     queryFn: async () => {
       const res = await fetch("/api/disciplines");
       if (!res.ok) throw new Error("Erro ao carregar disciplinas");
@@ -104,8 +104,8 @@ export default function AttendancePage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["attendances"] });
-      queryClient.invalidateQueries({ queryKey: ["attendance-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["attendances", selectedDiscipline] });
+      queryClient.invalidateQueries({ queryKey: ["attendance-stats", selectedDiscipline] });
       setIsDialogOpen(false);
       resetForm();
       toast({ title: "✓ Falta registrada com sucesso!" });
@@ -130,8 +130,8 @@ export default function AttendancePage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["attendances"] });
-      queryClient.invalidateQueries({ queryKey: ["attendance-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["attendances", selectedDiscipline] });
+      queryClient.invalidateQueries({ queryKey: ["attendance-stats", selectedDiscipline] });
       setIsDialogOpen(false);
       resetForm();
       toast({ title: "✓ Falta atualizada com sucesso!" });
@@ -149,8 +149,8 @@ export default function AttendancePage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["attendances"] });
-      queryClient.invalidateQueries({ queryKey: ["attendance-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["attendances", selectedDiscipline] });
+      queryClient.invalidateQueries({ queryKey: ["attendance-stats", selectedDiscipline] });
       toast({ title: "✓ Falta removida com sucesso!" });
     },
     onError: (err: any) => {
