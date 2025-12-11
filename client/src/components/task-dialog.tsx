@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -30,7 +30,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Task, Discipline } from "@shared/schema";
+import { ConflictDialog, checkTimeConflict, type ConflictItem } from "@/components/conflict-dialog";
+import type { Task, Discipline, Event } from "@shared/schema";
 
 const formSchema = z.object({
   title: z.string().min(1, "Título é obrigatório"),
@@ -58,6 +59,18 @@ export function TaskDialog({
 }: TaskDialogProps) {
   const { toast } = useToast();
   const isEditing = !!task;
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
+  const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
+  const [pendingData, setPendingData] = useState<FormData | null>(null);
+
+  // Buscar eventos e tarefas existentes para verificação de conflito
+  const { data: existingEvents = [] } = useQuery<Event[]>({
+    queryKey: ["/api/events"],
+  });
+
+  const { data: existingTasks = [] } = useQuery<Task[]>({
+    queryKey: ["/api/tasks"],
+  });
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -154,7 +167,7 @@ export function TaskDialog({
     },
   });
 
-  const onSubmit = (data: FormData) => {
+  const executeSubmit = (data: FormData) => {
     if (isEditing) {
       updateMutation.mutate(data);
     } else {
@@ -162,164 +175,206 @@ export function TaskDialog({
     }
   };
 
+  const onSubmit = (data: FormData) => {
+    // Só verificar conflitos se houver data de entrega definida
+    if (data.dueDate) {
+      const detectedConflicts = checkTimeConflict(
+        data.dueDate,
+        null, // Tarefas não têm horário de início
+        null, // Tarefas não têm horário de fim
+        existingEvents,
+        existingTasks,
+        undefined,
+        isEditing ? task?.id : undefined
+      );
+
+      if (detectedConflicts.length > 0) {
+        setConflicts(detectedConflicts);
+        setPendingData(data);
+        setConflictDialogOpen(true);
+        return;
+      }
+    }
+    
+    executeSubmit(data);
+  };
+
+  const handleConflictConfirm = () => {
+    if (pendingData) {
+      executeSubmit(pendingData);
+      setPendingData(null);
+    }
+    setConflictDialogOpen(false);
+  };
+
   const isPending = createMutation.isPending || updateMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {isEditing ? "Editar Tarefa" : "Nova Tarefa"}
-          </DialogTitle>
-          <DialogDescription>
-            {isEditing
-              ? "Atualize as informações da tarefa."
-              : "Adicione uma nova tarefa à sua lista."}
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Título *</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Ex: Ler capítulo 5"
-                      {...field}
-                      data-testid="input-task-title"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Descrição</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Adicione detalhes sobre a tarefa..."
-                      className="resize-none"
-                      {...field}
-                      data-testid="input-task-description"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-2 gap-4">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {isEditing ? "Editar Tarefa" : "Nova Tarefa"}
+            </DialogTitle>
+            <DialogDescription>
+              {isEditing
+                ? "Atualize as informações da tarefa."
+                : "Adicione uma nova tarefa à sua lista."}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
                 control={form.control}
-                name="priority"
+                name="title"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Prioridade</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-task-priority">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="high">Alta</SelectItem>
-                        <SelectItem value="medium">Média</SelectItem>
-                        <SelectItem value="low">Baixa</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Status</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-task-status">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="todo">A fazer</SelectItem>
-                        <SelectItem value="in_progress">Em progresso</SelectItem>
-                        <SelectItem value="completed">Concluída</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <FormField
-              control={form.control}
-              name="disciplineId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Disciplina</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormLabel>Título *</FormLabel>
                     <FormControl>
-                      <SelectTrigger data-testid="select-task-discipline">
-                        <SelectValue placeholder="Selecione" />
-                      </SelectTrigger>
+                      <Input
+                        placeholder="Ex: Ler capítulo 5"
+                        {...field}
+                        data-testid="input-task-title"
+                      />
                     </FormControl>
-                    <SelectContent>
-                      <SelectItem value="none">Nenhuma</SelectItem>
-                      {disciplines.map((d) => (
-                        <SelectItem key={d.id} value={d.id.toString()}>
-                          {d.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <FormField
-              control={form.control}
-              name="dueDate"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Data de Entrega</FormLabel>
-                  <FormControl>
-                    <Input type="date" {...field} data-testid="input-task-due-date" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Descrição</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Adicione detalhes sobre a tarefa..."
+                        className="resize-none"
+                        {...field}
+                        data-testid="input-task-description"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-            <div className="flex justify-end gap-2 pt-4">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onOpenChange(false)}
-                data-testid="button-cancel-task"
-              >
-                Cancelar
-              </Button>
-              <Button type="submit" disabled={isPending} data-testid="button-save-task">
-                {isPending ? "Salvando..." : isEditing ? "Salvar" : "Criar"}
-              </Button>
-            </div>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="priority"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Prioridade</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-task-priority">
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="high">Alta</SelectItem>
+                          <SelectItem value="medium">Média</SelectItem>
+                          <SelectItem value="low">Baixa</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-task-status">
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="todo">A fazer</SelectItem>
+                          <SelectItem value="in_progress">Em progresso</SelectItem>
+                          <SelectItem value="completed">Concluída</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="disciplineId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Disciplina</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-task-discipline">
+                          <SelectValue placeholder="Selecione" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="none">Nenhuma</SelectItem>
+                        {disciplines.map((d) => (
+                          <SelectItem key={d.id} value={d.id.toString()}>
+                            {d.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="dueDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Data de Entrega</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} data-testid="input-task-due-date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="flex justify-end gap-2 pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                  data-testid="button-cancel-task"
+                >
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={isPending} data-testid="button-save-task">
+                  {isPending ? "Salvando..." : isEditing ? "Salvar" : "Criar"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <ConflictDialog
+        open={conflictDialogOpen}
+        onOpenChange={setConflictDialogOpen}
+        conflicts={conflicts}
+        onConfirm={handleConflictConfirm}
+        itemType="tarefa"
+      />
+    </>
   );
 }

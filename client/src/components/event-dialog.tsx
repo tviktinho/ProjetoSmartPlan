@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -34,7 +34,8 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Event, Discipline } from "@shared/schema";
+import { ConflictDialog, checkTimeConflict, type ConflictItem } from "@/components/conflict-dialog";
+import type { Event, Discipline, Task } from "@shared/schema";
 
 const WEEKDAYS = [
   { id: "sunday", label: "Dom" },
@@ -80,6 +81,18 @@ export function EventDialog({
 }: EventDialogProps) {
   const { toast } = useToast();
   const isEditing = !!event;
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
+  const [conflicts, setConflicts] = useState<ConflictItem[]>([]);
+  const [pendingData, setPendingData] = useState<FormData | null>(null);
+
+  // Buscar eventos e tarefas existentes para verificação de conflito
+  const { data: existingEvents = [] } = useQuery<Event[]>({
+    queryKey: ["/api/events"],
+  });
+
+  const { data: existingTasks = [] } = useQuery<Task[]>({
+    queryKey: ["/api/tasks"],
+  });
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -221,7 +234,7 @@ export function EventDialog({
     },
   });
 
-  const onSubmit = (data: FormData) => {
+  const executeSubmit = (data: FormData) => {
     if (isEditing) {
       updateMutation.mutate(data);
     } else {
@@ -229,215 +242,90 @@ export function EventDialog({
     }
   };
 
+  const onSubmit = (data: FormData) => {
+    // Verificar conflitos de horário
+    const detectedConflicts = checkTimeConflict(
+      data.startDate,
+      data.startTime || null,
+      data.endTime || null,
+      existingEvents,
+      existingTasks,
+      isEditing ? event?.id : undefined,
+      undefined
+    );
+
+    if (detectedConflicts.length > 0) {
+      setConflicts(detectedConflicts);
+      setPendingData(data);
+      setConflictDialogOpen(true);
+    } else {
+      executeSubmit(data);
+    }
+  };
+
+  const handleConflictConfirm = () => {
+    if (pendingData) {
+      executeSubmit(pendingData);
+      setPendingData(null);
+    }
+    setConflictDialogOpen(false);
+  };
+
   const isPending = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {isEditing ? "Editar Evento" : "Novo Evento"}
-          </DialogTitle>
-          <DialogDescription>
-            {isEditing
-              ? "Atualize as informações do evento."
-              : "Adicione um novo compromisso ao seu calendário."}
-          </DialogDescription>
-        </DialogHeader>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="title"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Título *</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Ex: Aula de Cálculo"
-                      {...field}
-                      data-testid="input-event-title"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-2 gap-4">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {isEditing ? "Editar Evento" : "Novo Evento"}
+            </DialogTitle>
+            <DialogDescription>
+              {isEditing
+                ? "Atualize as informações do evento."
+                : "Adicione um novo compromisso ao seu calendário."}
+            </DialogDescription>
+          </DialogHeader>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
                 control={form.control}
-                name="eventType"
+                name="title"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Tipo *</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-event-type">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="aula">Aula</SelectItem>
-                        <SelectItem value="prova">Prova</SelectItem>
-                        <SelectItem value="apresentacao">Apresentação</SelectItem>
-                        <SelectItem value="monitoria">Monitoria</SelectItem>
-                        <SelectItem value="outro">Outro</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="disciplineId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Disciplina</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-event-discipline">
-                          <SelectValue placeholder="Selecione" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="none">Nenhuma</SelectItem>
-                        {disciplines.map((d) => (
-                          <SelectItem key={d.id} value={d.id.toString()}>
-                            {d.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <FormField
-              control={form.control}
-              name="startDate"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Data *</FormLabel>
-                  <FormControl>
-                    <Input type="date" {...field} data-testid="input-event-date" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="startTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Hora Início</FormLabel>
+                    <FormLabel>Título *</FormLabel>
                     <FormControl>
-                      <Input type="time" {...field} data-testid="input-event-start-time" />
+                      <Input
+                        placeholder="Ex: Aula de Cálculo"
+                        {...field}
+                        data-testid="input-event-title"
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="endTime"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Hora Fim</FormLabel>
-                    <FormControl>
-                      <Input type="time" {...field} data-testid="input-event-end-time" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <FormField
-              control={form.control}
-              name="location"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Local</FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder="Ex: Sala 3B101"
-                      {...field}
-                      data-testid="input-event-location"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="description"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Descrição</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      placeholder="Adicione uma descrição..."
-                      className="resize-none"
-                      {...field}
-                      data-testid="input-event-description"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="isRecurring"
-              render={({ field }) => (
-                <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                  <div>
-                    <FormLabel className="text-base">Evento Recorrente</FormLabel>
-                    <p className="text-sm text-muted-foreground">
-                      Ativar para aulas e monitorias que se repetem
-                    </p>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                      data-testid="switch-recurring"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-
-            {isRecurring && (
-              <div className="space-y-4 rounded-lg border p-4">
+              <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
-                  name="recurrencePattern"
+                  name="eventType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Frequência</FormLabel>
+                      <FormLabel>Tipo *</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
-                          <SelectTrigger data-testid="select-recurrence-pattern">
+                          <SelectTrigger data-testid="select-event-type">
                             <SelectValue placeholder="Selecione" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="daily">Diário</SelectItem>
-                          <SelectItem value="weekly">Semanal</SelectItem>
-                          <SelectItem value="monthly">Mensal</SelectItem>
+                          <SelectItem value="aula">Aula</SelectItem>
+                          <SelectItem value="prova">Prova</SelectItem>
+                          <SelectItem value="apresentacao">Apresentação</SelectItem>
+                          <SelectItem value="monitoria">Monitoria</SelectItem>
+                          <SelectItem value="outro">Outro</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -445,89 +333,253 @@ export function EventDialog({
                   )}
                 />
 
-                {form.watch("recurrencePattern") === "weekly" && (
-                  <FormField
-                    control={form.control}
-                    name="recurrenceDays"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Dias da semana</FormLabel>
-                        <div className="flex flex-wrap gap-2">
-                          {WEEKDAYS.map((day) => (
-                            <label
-                              key={day.id}
-                              className="flex items-center gap-2 cursor-pointer"
-                            >
-                              <Checkbox
-                                checked={field.value?.includes(day.id)}
-                                onCheckedChange={(checked) => {
-                                  const current = field.value || [];
-                                  if (checked) {
-                                    field.onChange([...current, day.id]);
-                                  } else {
-                                    field.onChange(
-                                      current.filter((d) => d !== day.id)
-                                    );
-                                  }
-                                }}
-                                data-testid={`checkbox-day-${day.id}`}
-                              />
-                              <span className="text-sm">{day.label}</span>
-                            </label>
+                <FormField
+                  control={form.control}
+                  name="disciplineId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Disciplina</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-event-discipline">
+                            <SelectValue placeholder="Selecione" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">Nenhuma</SelectItem>
+                          {disciplines.map((d) => (
+                            <SelectItem key={d.id} value={d.id.toString()}>
+                              {d.name}
+                            </SelectItem>
                           ))}
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="startDate"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Data *</FormLabel>
+                    <FormControl>
+                      <Input type="date" {...field} data-testid="input-event-date" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
                 )}
+              />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="startTime"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Hora Início</FormLabel>
+                      <FormControl>
+                        <Input type="time" {...field} data-testid="input-event-start-time" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
                 <FormField
                   control={form.control}
-                  name="recurrenceEndDate"
+                  name="endTime"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Repetir até</FormLabel>
+                      <FormLabel>Hora Fim</FormLabel>
                       <FormControl>
-                        <Input type="date" {...field} data-testid="input-recurrence-end" />
+                        <Input type="time" {...field} data-testid="input-event-end-time" />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
               </div>
-            )}
 
-            <div className="flex justify-between gap-2 pt-4">
-              {isEditing && (
-                <Button
-                  type="button"
-                  variant="destructive"
-                  onClick={() => deleteMutation.mutate()}
-                  disabled={isPending}
-                  data-testid="button-delete-event"
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Excluir
-                </Button>
+              <FormField
+                control={form.control}
+                name="location"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Local</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder="Ex: Sala 3B101"
+                        {...field}
+                        data-testid="input-event-location"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Descrição</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        placeholder="Adicione uma descrição..."
+                        className="resize-none"
+                        {...field}
+                        data-testid="input-event-description"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="isRecurring"
+                render={({ field }) => (
+                  <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <div>
+                      <FormLabel className="text-base">Evento Recorrente</FormLabel>
+                      <p className="text-sm text-muted-foreground">
+                        Ativar para aulas e monitorias que se repetem
+                      </p>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="switch-recurring"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+
+              {isRecurring && (
+                <div className="space-y-4 rounded-lg border p-4">
+                  <FormField
+                    control={form.control}
+                    name="recurrencePattern"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Frequência</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-recurrence-pattern">
+                              <SelectValue placeholder="Selecione" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="daily">Diário</SelectItem>
+                            <SelectItem value="weekly">Semanal</SelectItem>
+                            <SelectItem value="monthly">Mensal</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {form.watch("recurrencePattern") === "weekly" && (
+                    <FormField
+                      control={form.control}
+                      name="recurrenceDays"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Dias da semana</FormLabel>
+                          <div className="flex flex-wrap gap-2">
+                            {WEEKDAYS.map((day) => (
+                              <label
+                                key={day.id}
+                                className="flex items-center gap-2 cursor-pointer"
+                              >
+                                <Checkbox
+                                  checked={field.value?.includes(day.id)}
+                                  onCheckedChange={(checked) => {
+                                    const current = field.value || [];
+                                    if (checked) {
+                                      field.onChange([...current, day.id]);
+                                    } else {
+                                      field.onChange(
+                                        current.filter((d) => d !== day.id)
+                                      );
+                                    }
+                                  }}
+                                  data-testid={`checkbox-day-${day.id}`}
+                                />
+                                <span className="text-sm">{day.label}</span>
+                              </label>
+                            ))}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  <FormField
+                    control={form.control}
+                    name="recurrenceEndDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Repetir até</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} data-testid="input-recurrence-end" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               )}
-              <div className="flex gap-2 ml-auto">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => onOpenChange(false)}
-                  data-testid="button-cancel-event"
-                >
-                  Cancelar
-                </Button>
-                <Button type="submit" disabled={isPending} data-testid="button-save-event">
-                  {isPending ? "Salvando..." : isEditing ? "Salvar" : "Criar"}
-                </Button>
+
+              <div className="flex justify-between gap-2 pt-4">
+                {isEditing && (
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    onClick={() => deleteMutation.mutate()}
+                    disabled={isPending}
+                    data-testid="button-delete-event"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Excluir
+                  </Button>
+                )}
+                <div className="flex gap-2 ml-auto">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => onOpenChange(false)}
+                    data-testid="button-cancel-event"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button type="submit" disabled={isPending} data-testid="button-save-event">
+                    {isPending ? "Salvando..." : isEditing ? "Salvar" : "Criar"}
+                  </Button>
+                </div>
               </div>
-            </div>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
+      <ConflictDialog
+        open={conflictDialogOpen}
+        onOpenChange={setConflictDialogOpen}
+        conflicts={conflicts}
+        onConfirm={handleConflictConfirm}
+        itemType="evento"
+      />
+    </>
   );
 }
