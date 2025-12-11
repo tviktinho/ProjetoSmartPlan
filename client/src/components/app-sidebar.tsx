@@ -8,6 +8,7 @@ import {
   Bell,
   Users,
   LogOut,
+  UserCheck,
 } from "lucide-react";
 import {
   Sidebar,
@@ -59,6 +60,11 @@ const menuItems = [
     title: "Reuniões",
     url: "/reunioes",
     icon: Users,
+  },
+  {
+    title: "Faltas",
+    url: "/faltas",
+    icon: UserCheck,
   },
 ];
 

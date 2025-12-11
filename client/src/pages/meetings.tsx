@@ -210,6 +210,15 @@ function MeetingsPage() {
                       </p>
                     )}
 
+                    {meeting.isCancelled && (
+                      <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm font-semibold text-red-700">⚠️ Aula/Reunião Cancelada</p>
+                        {meeting.cancellationReason && (
+                          <p className="text-sm text-red-600 mt-1">{meeting.cancellationReason}</p>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex flex-wrap gap-2 mt-3">
                       {meeting.videoCallUrl && (
                         <a
