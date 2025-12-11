@@ -320,7 +320,7 @@ async def login(data: UserLogin, request: Request, db: Session = Depends(get_db)
     
     user = db.query(User).filter(User.email == data.email.lower()).first()
     if not user or not user.password_hash or not verify_password(data.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
     
     request.session["user"] = {"id": user.id, "email": user.email}
     return UserResponse.from_orm(user)
