@@ -108,6 +108,45 @@ class StudyGoal(Base):
     current_hours = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class Reminder(Base):
+    __tablename__ = "reminders"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    discipline_id = Column(Integer, ForeignKey("disciplines.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    reminder_type = Column(String(50), nullable=False)  # 'prova', 'trabalho', 'apresentacao', 'prazo'
+    due_date = Column(Date, nullable=False)
+    due_time = Column(Time)
+    priority = Column(String(20), default="medium")  # 'high', 'medium', 'low'
+    notification_enabled = Column(Boolean, default=True)
+    reminder_time = Column(Integer)  # minutos antes
+    status = Column(String(20), default="pending")  # 'pending', 'completed', 'cancelled'
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class Meeting(Base):
+    __tablename__ = "meetings"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    discipline_id = Column(Integer, ForeignKey("disciplines.id", ondelete="SET NULL"), nullable=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    meeting_type = Column(String(50), nullable=False)  # 'trabalho', 'disciplina', 'estudo', 'outro'
+    start_date = Column(Date, nullable=False)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time)
+    location = Column(String(255))
+    participants = Column(ARRAY(String))  # emails ou nomes
+    is_recurring = Column(Boolean, default=False)
+    recurrence_pattern = Column(String(50))  # 'daily', 'weekly', 'monthly'
+    recurrence_days = Column(ARRAY(String))  # ['monday', 'wednesday']
+    recurrence_end_date = Column(Date)
+    video_call_url = Column(String)
+    notes_url = Column(String)
+    status = Column(String(20), default="scheduled")  # 'scheduled', 'ongoing', 'completed', 'cancelled'
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 Base.metadata.create_all(bind=engine)
 
 def get_db():
@@ -178,6 +217,36 @@ class StudyGoalCreate(BaseModel):
     target_hours: int
     period_type: str
     current_hours: int = 0
+
+class ReminderCreate(BaseModel):
+    title: str
+    reminder_type: str  # 'prova', 'trabalho', 'apresentacao', 'prazo'
+    due_date: str
+    priority: str = "medium"
+    description: Optional[str] = None
+    discipline_id: Optional[int] = None
+    due_time: Optional[str] = None
+    notification_enabled: bool = True
+    reminder_time: Optional[int] = None  # minutos
+    status: str = "pending"
+
+class MeetingCreate(BaseModel):
+    title: str
+    meeting_type: str  # 'trabalho', 'disciplina', 'estudo', 'outro'
+    start_date: str
+    start_time: str
+    description: Optional[str] = None
+    discipline_id: Optional[int] = None
+    end_time: Optional[str] = None
+    location: Optional[str] = None
+    participants: Optional[List[str]] = None
+    is_recurring: bool = False
+    recurrence_pattern: Optional[str] = None
+    recurrence_days: Optional[List[str]] = None
+    recurrence_end_date: Optional[str] = None
+    video_call_url: Optional[str] = None
+    notes_url: Optional[str] = None
+    status: str = "scheduled"
 
 app = FastAPI(title="Agenda UFU")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -356,6 +425,66 @@ async def delete_goal(id: int, uid: str = Depends(get_user), db: Session = Depen
     g = db.query(StudyGoal).filter(StudyGoal.id == id, StudyGoal.user_id == uid).first()
     if not g: raise HTTPException(status_code=404)
     db.delete(g)
+    db.commit()
+    return {"ok": True}
+
+# Reminders endpoints
+@app.get("/api/reminders")
+async def list_reminders(uid: str = Depends(get_user), db: Session = Depends(get_db)):
+    return db.query(Reminder).filter(Reminder.user_id == uid).all()
+
+@app.post("/api/reminders")
+async def create_reminder(data: ReminderCreate, uid: str = Depends(get_user), db: Session = Depends(get_db)):
+    r = Reminder(user_id=uid, **data.dict())
+    db.add(r)
+    db.commit()
+    db.refresh(r)
+    return r
+
+@app.patch("/api/reminders/{id}")
+async def update_reminder(id: int, data: ReminderCreate, uid: str = Depends(get_user), db: Session = Depends(get_db)):
+    r = db.query(Reminder).filter(Reminder.id == id, Reminder.user_id == uid).first()
+    if not r: raise HTTPException(status_code=404)
+    for k, v in data.dict().items():
+        setattr(r, k, v)
+    db.commit()
+    return r
+
+@app.delete("/api/reminders/{id}")
+async def delete_reminder(id: int, uid: str = Depends(get_user), db: Session = Depends(get_db)):
+    r = db.query(Reminder).filter(Reminder.id == id, Reminder.user_id == uid).first()
+    if not r: raise HTTPException(status_code=404)
+    db.delete(r)
+    db.commit()
+    return {"ok": True}
+
+# Meetings endpoints
+@app.get("/api/meetings")
+async def list_meetings(uid: str = Depends(get_user), db: Session = Depends(get_db)):
+    return db.query(Meeting).filter(Meeting.user_id == uid).all()
+
+@app.post("/api/meetings")
+async def create_meeting(data: MeetingCreate, uid: str = Depends(get_user), db: Session = Depends(get_db)):
+    m = Meeting(user_id=uid, **data.dict())
+    db.add(m)
+    db.commit()
+    db.refresh(m)
+    return m
+
+@app.patch("/api/meetings/{id}")
+async def update_meeting(id: int, data: MeetingCreate, uid: str = Depends(get_user), db: Session = Depends(get_db)):
+    m = db.query(Meeting).filter(Meeting.id == id, Meeting.user_id == uid).first()
+    if not m: raise HTTPException(status_code=404)
+    for k, v in data.dict().items():
+        setattr(m, k, v)
+    db.commit()
+    return m
+
+@app.delete("/api/meetings/{id}")
+async def delete_meeting(id: int, uid: str = Depends(get_user), db: Session = Depends(get_db)):
+    m = db.query(Meeting).filter(Meeting.id == id, Meeting.user_id == uid).first()
+    if not m: raise HTTPException(status_code=404)
+    db.delete(m)
     db.commit()
     return {"ok": True}
 

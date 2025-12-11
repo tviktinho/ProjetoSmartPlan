@@ -94,12 +94,55 @@ export const studyGoals = pgTable("study_goals", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Reminders table (lembretes de provas, trabalhos, etc)
+export const reminders = pgTable("reminders", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  disciplineId: integer("discipline_id").references(() => disciplines.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  reminderType: varchar("reminder_type", { length: 50 }).notNull(), // 'prova', 'trabalho', 'apresentacao', 'prazo'
+  dueDate: date("due_date").notNull(),
+  dueTime: time("due_time"),
+  priority: varchar("priority", { length: 20 }).default("medium"), // 'high', 'medium', 'low'
+  notificationEnabled: boolean("notification_enabled").default(true),
+  reminderTime: integer("reminder_time"), // minutos antes do evento
+  status: varchar("status", { length: 20 }).default("pending"), // 'pending', 'completed', 'cancelled'
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Meetings table (reuniões de trabalho, disciplina, etc)
+export const meetings = pgTable("meetings", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  disciplineId: integer("discipline_id").references(() => disciplines.id, { onDelete: "set null" }),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  meetingType: varchar("meeting_type", { length: 50 }).notNull(), // 'trabalho', 'disciplina', 'estudo', 'outro'
+  startDate: date("start_date").notNull(),
+  startTime: time("start_time").notNull(),
+  endTime: time("end_time"),
+  location: varchar("location", { length: 255 }),
+  participants: text("participants").array(), // emails ou nomes dos participantes
+  isRecurring: boolean("is_recurring").default(false),
+  recurrencePattern: varchar("recurrence_pattern", { length: 50 }), // 'daily', 'weekly', 'monthly'
+  recurrenceDays: text("recurrence_days").array(), // ['monday', 'wednesday']
+  recurrenceEndDate: date("recurrence_end_date"),
+  videoCallUrl: varchar("video_call_url"),
+  notesUrl: varchar("notes_url"),
+  status: varchar("status", { length: 20 }).default("scheduled"), // 'scheduled', 'ongoing', 'completed', 'cancelled'
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   disciplines: many(disciplines),
   events: many(events),
   tasks: many(tasks),
   studyGoals: many(studyGoals),
+  reminders: many(reminders),
+  meetings: many(meetings),
 }));
 
 export const disciplinesRelations = relations(disciplines, ({ one, many }) => ({
@@ -140,6 +183,28 @@ export const studyGoalsRelations = relations(studyGoals, ({ one }) => ({
   }),
 }));
 
+export const remindersRelations = relations(reminders, ({ one }) => ({
+  user: one(users, {
+    fields: [reminders.userId],
+    references: [users.id],
+  }),
+  discipline: one(disciplines, {
+    fields: [reminders.disciplineId],
+    references: [disciplines.id],
+  }),
+}));
+
+export const meetingsRelations = relations(meetings, ({ one }) => ({
+  user: one(users, {
+    fields: [meetings.userId],
+    references: [users.id],
+  }),
+  discipline: one(disciplines, {
+    fields: [meetings.disciplineId],
+    references: [disciplines.id],
+  }),
+}));
+
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users);
 export const insertDisciplineSchema = createInsertSchema(disciplines).omit({
@@ -159,6 +224,15 @@ export const insertStudyGoalSchema = createInsertSchema(studyGoals).omit({
   id: true,
   createdAt: true,
 });
+export const insertReminderSchema = createInsertSchema(reminders).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+export const insertMeetingSchema = createInsertSchema(meetings).omit({
+  id: true,
+  createdAt: true,
+});
 
 // Types
 export type UpsertUser = typeof users.$inferInsert;
@@ -175,3 +249,9 @@ export type Task = typeof tasks.$inferSelect;
 
 export type InsertStudyGoal = z.infer<typeof insertStudyGoalSchema>;
 export type StudyGoal = typeof studyGoals.$inferSelect;
+
+export type InsertReminder = z.infer<typeof insertReminderSchema>;
+export type Reminder = typeof reminders.$inferSelect;
+
+export type InsertMeeting = z.infer<typeof insertMeetingSchema>;
+export type Meeting = typeof meetings.$inferSelect;
