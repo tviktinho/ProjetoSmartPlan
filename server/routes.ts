@@ -276,5 +276,42 @@ export async function registerRoutes(
     res.json({ ok: true });
   });
 
+  // Attendances
+  app.get("/api/attendances", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const disciplineId = req.query.discipline_id ? parseInt(req.query.discipline_id as string) : undefined;
+    const attendances = await storage.getAttendances(uid, disciplineId);
+    res.json(attendances);
+  });
+
+  app.post("/api/attendances", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const attendance = await storage.createAttendance({ ...req.body, userId: uid });
+    res.json(attendance);
+  });
+
+  app.patch("/api/attendances/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const updated = await storage.updateAttendance(parseInt(req.params.id), req.body);
+    res.json(updated);
+  });
+
+  app.delete("/api/attendances/:id", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    await storage.deleteAttendance(parseInt(req.params.id));
+    res.json({ ok: true });
+  });
+
+  app.get("/api/attendances/stats/:disciplineId", async (req: Request, res: Response) => {
+    const uid = checkAuth(req, res);
+    if (!uid) return;
+    const stats = await storage.getAttendanceStats(uid, parseInt(req.params.disciplineId));
+    res.json(stats);
+  });
+
   return httpServer;
 }

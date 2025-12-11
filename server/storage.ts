@@ -1,4 +1,4 @@
-import { type User, type Discipline, type Event, type Task, type StudyGoal, type Reminder, type Meeting } from "@shared/schema";
+import { type User, type Discipline, type Event, type Task, type StudyGoal, type Reminder, type Meeting, type Attendance } from "@shared/schema";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 
@@ -44,6 +44,13 @@ export interface IStorage {
   createMeeting(meeting: Partial<Meeting>): Promise<Meeting>;
   updateMeeting(id: number, data: Partial<Meeting>): Promise<Meeting>;
   deleteMeeting(id: number): Promise<void>;
+
+  // Attendances
+  getAttendances(userId: string, disciplineId?: number): Promise<Attendance[]>;
+  createAttendance(attendance: Partial<Attendance>): Promise<Attendance>;
+  updateAttendance(id: number, data: Partial<Attendance>): Promise<Attendance>;
+  deleteAttendance(id: number): Promise<void>;
+  getAttendanceStats(userId: string, disciplineId: number): Promise<any>;
 }
 
 export class MemStorage implements IStorage {
@@ -53,8 +60,7 @@ export class MemStorage implements IStorage {
   private tasks: Map<number, Task> = new Map();
   private goals: Map<number, StudyGoal> = new Map();
   private reminders: Map<number, Reminder> = new Map();
-  private meetings: Map<number, Meeting> = new Map();
-  private nextDisciplineId = 1;
+  private meetings: Map<number, Meeting> = new Map();  private attendances: Map<number, Attendance> = new Map();  private nextDisciplineId = 1;
   private nextEventId = 1;
   private nextTaskId = 1;
   private nextGoalId = 1;
@@ -305,6 +311,53 @@ export class MemStorage implements IStorage {
 
   async deleteMeeting(id: number): Promise<void> {
     this.meetings.delete(id);
+  }
+
+  // Attendances
+  async getAttendances(userId: string, disciplineId?: number): Promise<Attendance[]> {
+    const attendances = Array.from(this.attendances.values()).filter(
+      a => a.userId === userId && (!disciplineId || a.disciplineId === disciplineId)
+    );
+    return attendances;
+  }
+
+  async createAttendance(attendance: Partial<Attendance>): Promise<Attendance> {
+    const id = this.nextId++;
+    const newAttendance: Attendance = {
+      id,
+      userId: attendance.userId || "",
+      disciplineId: attendance.disciplineId || 0,
+      meetingId: attendance.meetingId,
+      attendanceDate: attendance.attendanceDate || new Date().toISOString().split("T")[0],
+      status: attendance.status as "present" | "absent" | "justified" || "present",
+      justification: attendance.justification,
+      createdAt: new Date().toISOString(),
+    };
+    this.attendances.set(id, newAttendance);
+    return newAttendance;
+  }
+
+  async updateAttendance(id: number, data: Partial<Attendance>): Promise<Attendance> {
+    const attendance = this.attendances.get(id);
+    if (!attendance) throw new Error("Not found");
+    const updated = { ...attendance, ...data };
+    this.attendances.set(id, updated);
+    return updated;
+  }
+
+  async deleteAttendance(id: number): Promise<void> {
+    this.attendances.delete(id);
+  }
+
+  async getAttendanceStats(userId: string, disciplineId: number) {
+    const attendances = await this.getAttendances(userId, disciplineId);
+    const total = attendances.length;
+    const present = attendances.filter(a => a.status === "present").length;
+    const absent = attendances.filter(a => a.status === "absent").length;
+    const justified = attendances.filter(a => a.status === "justified").length;
+    const attendance_rate = total > 0 ? Math.round((present / total) * 100 * 100) / 100 : 0;
+    
+    return { total, present, absent, justified, attendance_rate };
   }
 }
 
