@@ -274,31 +274,6 @@ export function MeetingDialog({
             </>
           )}
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="isCancelled"
-              checked={formData.isCancelled || false}
-              onCheckedChange={(checked) =>
-                setFormData({ ...formData, isCancelled: checked as boolean })
-              }
-            />
-            <Label htmlFor="isCancelled">Aula/Reunião Cancelada</Label>
-          </div>
-
-          {formData.isCancelled && (
-            <div>
-              <Label htmlFor="cancellationReason">Motivo do Cancelamento</Label>
-              <Textarea
-                id="cancellationReason"
-                placeholder="Ex: Problema técnico, Instructor ausente..."
-                value={formData.cancellationReason || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, cancellationReason: e.target.value })
-                }
-              />
-            </div>
-          )}
-
           <div className="flex gap-2">
             <Button
               type="submit"

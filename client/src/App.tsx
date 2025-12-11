@@ -22,7 +22,6 @@ import TasksPage from "@/pages/tasks";
 import GoalsPage from "@/pages/goals";
 import RemindersPage from "@/pages/reminders";
 import MeetingsPage from "@/pages/meetings";
-import AttendancePage from "@/pages/attendance";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -92,7 +91,6 @@ function Router() {
         <Route path="/metas" component={GoalsPage} />
         <Route path="/lembretes" component={RemindersPage} />
         <Route path="/reunioes" component={MeetingsPage} />
-        <Route path="/faltas" component={AttendancePage} />
         <Route component={NotFound} />
       </Switch>
     </AuthenticatedLayout>

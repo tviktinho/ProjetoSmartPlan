@@ -14,7 +14,7 @@ import re
 # Adicionado: passlib para hashing de senha
 from passlib.context import CryptContext
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:admin@localhost:5432/smart_plan")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:admin@localhost/ufu_agenda")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -145,19 +145,6 @@ class Meeting(Base):
     video_call_url = Column(String)
     notes_url = Column(String)
     status = Column(String(20), default="scheduled")  # 'scheduled', 'ongoing', 'completed', 'cancelled'
-    is_cancelled = Column(Boolean, default=False)
-    cancellation_reason = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-class Attendance(Base):
-    __tablename__ = "attendances"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"))
-    discipline_id = Column(Integer, ForeignKey("disciplines.id", ondelete="CASCADE"))
-    meeting_id = Column(Integer, ForeignKey("meetings.id", ondelete="SET NULL"), nullable=True)
-    attendance_date = Column(Date, nullable=False)
-    status = Column(String(20), nullable=False)  # 'present', 'absent', 'justified'
-    justification = Column(Text)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(bind=engine)
@@ -260,19 +247,6 @@ class MeetingCreate(BaseModel):
     video_call_url: Optional[str] = None
     notes_url: Optional[str] = None
     status: str = "scheduled"
-    is_cancelled: bool = False
-    cancellation_reason: Optional[str] = None
-
-class AttendanceCreate(BaseModel):
-    discipline_id: int
-    meeting_id: Optional[int] = None
-    attendance_date: str
-    status: str  # 'present', 'absent', 'justified'
-    justification: Optional[str] = None
-
-class AttendanceUpdate(BaseModel):
-    status: Optional[str] = None
-    justification: Optional[str] = None
 
 app = FastAPI(title="Agenda UFU")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -511,65 +485,6 @@ async def delete_meeting(id: int, uid: str = Depends(get_user), db: Session = De
     m = db.query(Meeting).filter(Meeting.id == id, Meeting.user_id == uid).first()
     if not m: raise HTTPException(status_code=404)
     db.delete(m)
-    db.commit()
-    return {"ok": True}
-
-# Attendance endpoints (Faltas)
-@app.get("/api/attendances")
-async def list_attendances(discipline_id: Optional[int] = None, uid: str = Depends(get_user), db: Session = Depends(get_db)):
-    query = db.query(Attendance).filter(Attendance.user_id == uid)
-    if discipline_id:
-        query = query.filter(Attendance.discipline_id == discipline_id)
-    return query.all()
-
-@app.get("/api/attendances/stats/{discipline_id}")
-async def get_attendance_stats(discipline_id: int, uid: str = Depends(get_user), db: Session = Depends(get_db)):
-    # Verificar se o usuário é dono da disciplina
-    disc = db.query(Discipline).filter(Discipline.id == discipline_id, Discipline.user_id == uid).first()
-    if not disc:
-        raise HTTPException(status_code=404, detail="Discipline not found")
-    
-    attendances = db.query(Attendance).filter(Attendance.user_id == uid, Attendance.discipline_id == discipline_id).all()
-    
-    total = len(attendances)
-    present = sum(1 for a in attendances if a.status == "present")
-    absent = sum(1 for a in attendances if a.status == "absent")
-    justified = sum(1 for a in attendances if a.status == "justified")
-    
-    attendance_rate = (present / total * 100) if total > 0 else 0
-    
-    return {
-        "total": total,
-        "present": present,
-        "absent": absent,
-        "justified": justified,
-        "attendance_rate": round(attendance_rate, 2)
-    }
-
-@app.post("/api/attendances")
-async def create_attendance(data: AttendanceCreate, uid: str = Depends(get_user), db: Session = Depends(get_db)):
-    a = Attendance(user_id=uid, **data.dict())
-    db.add(a)
-    db.commit()
-    db.refresh(a)
-    return a
-
-@app.patch("/api/attendances/{id}")
-async def update_attendance(id: int, data: AttendanceUpdate, uid: str = Depends(get_user), db: Session = Depends(get_db)):
-    a = db.query(Attendance).filter(Attendance.id == id, Attendance.user_id == uid).first()
-    if not a:
-        raise HTTPException(status_code=404)
-    for k, v in data.dict(exclude_unset=True).items():
-        setattr(a, k, v)
-    db.commit()
-    return a
-
-@app.delete("/api/attendances/{id}")
-async def delete_attendance(id: int, uid: str = Depends(get_user), db: Session = Depends(get_db)):
-    a = db.query(Attendance).filter(Attendance.id == id, Attendance.user_id == uid).first()
-    if not a:
-        raise HTTPException(status_code=404)
-    db.delete(a)
     db.commit()
     return {"ok": True}
 
