@@ -1,4 +1,7 @@
 import { type User, type Discipline, type Event, type Task, type StudyGoal, type Reminder, type Meeting, type Attendance } from "@shared/schema";
+import { users, disciplines, events, tasks, studyGoals, reminders, meetings, attendances } from "@shared/schema";
+import { db } from "./db";
+import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 
@@ -53,47 +56,32 @@ export interface IStorage {
   getAttendanceStats(userId: string, disciplineId: number): Promise<any>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User> = new Map();
-  private disciplines: Map<number, Discipline> = new Map();
-  private events: Map<number, Event> = new Map();
-  private tasks: Map<number, Task> = new Map();
-  private goals: Map<number, StudyGoal> = new Map();
-  private reminders: Map<number, Reminder> = new Map();
-  private meetings: Map<number, Meeting> = new Map();
-  private attendances: Map<number, Attendance> = new Map();
-  
-  private nextDisciplineId = 1;
-  private nextEventId = 1;
-  private nextTaskId = 1;
-  private nextGoalId = 1;
-  private nextReminderId = 1;
-  private nextMeetingId = 1;
-  private nextAttendanceId = 1;
-
+export class DatabaseStorage implements IStorage {
+  // Users
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find((u) => u.email === email.toLowerCase());
+    const [user] = await db.select().from(users).where(eq(users.email, email.toLowerCase()));
+    return user;
   }
 
   async createUser(data: Partial<User>): Promise<User> {
     const hashedPassword = data.password 
       ? await bcrypt.hash(data.password, 10)
       : await bcrypt.hash("", 10);
-    const user: User = {
+    
+    const [user] = await db.insert(users).values({
       id: randomUUID(),
-      email: data.email || "",
+      email: data.email?.toLowerCase() || "",
       password: hashedPassword,
       firstName: data.firstName ?? null,
       lastName: data.lastName ?? null,
       profileImageUrl: data.profileImageUrl ?? null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    this.users.set(user.id, user);
+    }).returning();
+    
     return user;
   }
 
@@ -104,44 +92,43 @@ export class MemStorage implements IStorage {
     return isValid ? user : null;
   }
 
+  // Disciplines
   async getDisciplines(userId: string): Promise<Discipline[]> {
-    return Array.from(this.disciplines.values()).filter((d) => d.userId === userId);
+    return db.select().from(disciplines).where(eq(disciplines.userId, userId));
   }
 
   async createDiscipline(data: Partial<Discipline>): Promise<Discipline> {
-    const discipline: Discipline = {
-      id: this.nextDisciplineId++,
+    const [discipline] = await db.insert(disciplines).values({
       userId: data.userId || "",
       name: data.name || "",
       code: data.code ?? null,
       professor: data.professor ?? null,
       semester: data.semester ?? null,
       color: data.color || "#3B82F6",
-      createdAt: new Date(),
-    };
-    this.disciplines.set(discipline.id, discipline);
+    }).returning();
     return discipline;
   }
 
   async updateDiscipline(id: number, data: Partial<Discipline>): Promise<Discipline> {
-    const discipline = this.disciplines.get(id);
+    const [discipline] = await db.update(disciplines)
+      .set(data)
+      .where(eq(disciplines.id, id))
+      .returning();
     if (!discipline) throw new Error("Not found");
-    const updated = { ...discipline, ...data };
-    this.disciplines.set(id, updated);
-    return updated;
+    return discipline;
   }
 
   async deleteDiscipline(id: number): Promise<void> {
-    this.disciplines.delete(id);
+    await db.delete(disciplines).where(eq(disciplines.id, id));
   }
 
+  // Events
   async getEvents(userId: string): Promise<Event[]> {
-    return Array.from(this.events.values()).filter((e) => e.userId === userId);
+    return db.select().from(events).where(eq(events.userId, userId));
   }
 
   async createEvent(data: Partial<Event>): Promise<Event> {
-    const event: Event = {
-      id: this.nextEventId++,
+    const [event] = await db.insert(events).values({
       userId: data.userId || "",
       disciplineId: data.disciplineId ?? null,
       title: data.title || "",
@@ -155,31 +142,30 @@ export class MemStorage implements IStorage {
       recurrencePattern: data.recurrencePattern ?? null,
       recurrenceDays: data.recurrenceDays ?? null,
       recurrenceEndDate: data.recurrenceEndDate ?? null,
-      createdAt: new Date(),
-    };
-    this.events.set(event.id, event);
+    }).returning();
     return event;
   }
 
   async updateEvent(id: number, data: Partial<Event>): Promise<Event> {
-    const event = this.events.get(id);
+    const [event] = await db.update(events)
+      .set(data)
+      .where(eq(events.id, id))
+      .returning();
     if (!event) throw new Error("Not found");
-    const updated = { ...event, ...data };
-    this.events.set(id, updated);
-    return updated;
+    return event;
   }
 
   async deleteEvent(id: number): Promise<void> {
-    this.events.delete(id);
+    await db.delete(events).where(eq(events.id, id));
   }
 
+  // Tasks
   async getTasks(userId: string): Promise<Task[]> {
-    return Array.from(this.tasks.values()).filter((t) => t.userId === userId);
+    return db.select().from(tasks).where(eq(tasks.userId, userId));
   }
 
   async createTask(data: Partial<Task>): Promise<Task> {
-    const task: Task = {
-      id: this.nextTaskId++,
+    const [task] = await db.insert(tasks).values({
       userId: data.userId || "",
       disciplineId: data.disciplineId ?? null,
       title: data.title || "",
@@ -188,62 +174,59 @@ export class MemStorage implements IStorage {
       status: data.status || "todo",
       dueDate: data.dueDate ?? null,
       completedAt: data.completedAt ?? null,
-      createdAt: new Date(),
-    };
-    this.tasks.set(task.id, task);
+    }).returning();
     return task;
   }
 
   async updateTask(id: number, data: Partial<Task>): Promise<Task> {
-    const task = this.tasks.get(id);
+    const [task] = await db.update(tasks)
+      .set(data)
+      .where(eq(tasks.id, id))
+      .returning();
     if (!task) throw new Error("Not found");
-    const updated = { ...task, ...data };
-    this.tasks.set(id, updated);
-    return updated;
+    return task;
   }
 
   async deleteTask(id: number): Promise<void> {
-    this.tasks.delete(id);
+    await db.delete(tasks).where(eq(tasks.id, id));
   }
 
+  // Goals
   async getGoals(userId: string): Promise<StudyGoal[]> {
-    return Array.from(this.goals.values()).filter((g) => g.userId === userId);
+    return db.select().from(studyGoals).where(eq(studyGoals.userId, userId));
   }
 
   async createGoal(data: Partial<StudyGoal>): Promise<StudyGoal> {
-    const goal: StudyGoal = {
-      id: this.nextGoalId++,
+    const [goal] = await db.insert(studyGoals).values({
       userId: data.userId || "",
       title: data.title || "",
       targetHours: data.targetHours || 0,
       periodType: data.periodType || "weekly",
       currentHours: data.currentHours || 0,
-      createdAt: new Date(),
-    };
-    this.goals.set(goal.id, goal);
+    }).returning();
     return goal;
   }
 
   async updateGoal(id: number, data: Partial<StudyGoal>): Promise<StudyGoal> {
-    const goal = this.goals.get(id);
+    const [goal] = await db.update(studyGoals)
+      .set(data)
+      .where(eq(studyGoals.id, id))
+      .returning();
     if (!goal) throw new Error("Not found");
-    const updated = { ...goal, ...data };
-    this.goals.set(id, updated);
-    return updated;
+    return goal;
   }
 
   async deleteGoal(id: number): Promise<void> {
-    this.goals.delete(id);
+    await db.delete(studyGoals).where(eq(studyGoals.id, id));
   }
 
   // Reminders
   async getReminders(userId: string): Promise<Reminder[]> {
-    return Array.from(this.reminders.values()).filter((r) => r.userId === userId);
+    return db.select().from(reminders).where(eq(reminders.userId, userId));
   }
 
   async createReminder(data: Partial<Reminder>): Promise<Reminder> {
-    const reminder: Reminder = {
-      id: this.nextReminderId++,
+    const [reminder] = await db.insert(reminders).values({
       userId: data.userId || "",
       disciplineId: data.disciplineId ?? null,
       title: data.title || "",
@@ -256,32 +239,30 @@ export class MemStorage implements IStorage {
       reminderTime: data.reminderTime ?? null,
       status: data.status || "pending",
       completedAt: data.completedAt ?? null,
-      createdAt: new Date(),
-    };
-    this.reminders.set(reminder.id, reminder);
+    }).returning();
     return reminder;
   }
 
   async updateReminder(id: number, data: Partial<Reminder>): Promise<Reminder> {
-    const reminder = this.reminders.get(id);
+    const [reminder] = await db.update(reminders)
+      .set(data)
+      .where(eq(reminders.id, id))
+      .returning();
     if (!reminder) throw new Error("Not found");
-    const updated = { ...reminder, ...data };
-    this.reminders.set(id, updated);
-    return updated;
+    return reminder;
   }
 
   async deleteReminder(id: number): Promise<void> {
-    this.reminders.delete(id);
+    await db.delete(reminders).where(eq(reminders.id, id));
   }
 
   // Meetings
   async getMeetings(userId: string): Promise<Meeting[]> {
-    return Array.from(this.meetings.values()).filter((m) => m.userId === userId);
+    return db.select().from(meetings).where(eq(meetings.userId, userId));
   }
 
   async createMeeting(data: Partial<Meeting>): Promise<Meeting> {
-    const meeting: Meeting = {
-      id: this.nextMeetingId++,
+    const [meeting] = await db.insert(meetings).values({
       userId: data.userId || "",
       disciplineId: data.disciplineId ?? null,
       title: data.title || "",
@@ -299,70 +280,71 @@ export class MemStorage implements IStorage {
       videoCallUrl: data.videoCallUrl ?? null,
       notesUrl: data.notesUrl ?? null,
       status: data.status || "scheduled",
-      createdAt: new Date(),
-    };
-    this.meetings.set(meeting.id, meeting);
+      isCancelled: data.isCancelled || false,
+      cancellationReason: data.cancellationReason ?? null,
+    }).returning();
     return meeting;
   }
 
   async updateMeeting(id: number, data: Partial<Meeting>): Promise<Meeting> {
-    const meeting = this.meetings.get(id);
+    const [meeting] = await db.update(meetings)
+      .set(data)
+      .where(eq(meetings.id, id))
+      .returning();
     if (!meeting) throw new Error("Not found");
-    const updated = { ...meeting, ...data };
-    this.meetings.set(id, updated);
-    return updated;
+    return meeting;
   }
 
   async deleteMeeting(id: number): Promise<void> {
-    this.meetings.delete(id);
+    await db.delete(meetings).where(eq(meetings.id, id));
   }
 
   // Attendances
   async getAttendances(userId: string, disciplineId?: number): Promise<Attendance[]> {
-    const attendances = Array.from(this.attendances.values()).filter(
-      a => a.userId === userId && (!disciplineId || a.disciplineId === disciplineId)
-    );
-    return attendances;
+    if (disciplineId) {
+      return db.select().from(attendances).where(
+        and(eq(attendances.userId, userId), eq(attendances.disciplineId, disciplineId))
+      );
+    }
+    return db.select().from(attendances).where(eq(attendances.userId, userId));
   }
 
-  async createAttendance(attendance: Partial<Attendance>): Promise<Attendance> {
-    const id = this.nextAttendanceId++;
-    const newAttendance: Attendance = {
-      id,
-      userId: attendance.userId || "",
-      disciplineId: attendance.disciplineId || 0,
-      meetingId: attendance.meetingId,
-      attendanceDate: attendance.attendanceDate || new Date().toISOString().split("T")[0],
-      status: attendance.status as "present" | "absent" | "justified" || "present",
-      justification: attendance.justification,
-      createdAt: new Date().toISOString(),
-    };
-    this.attendances.set(id, newAttendance);
-    return newAttendance;
+  async createAttendance(data: Partial<Attendance>): Promise<Attendance> {
+    const [attendance] = await db.insert(attendances).values({
+      userId: data.userId || "",
+      disciplineId: data.disciplineId || 0,
+      meetingId: data.meetingId ?? null,
+      attendanceDate: data.attendanceDate || new Date().toISOString().split("T")[0],
+      status: data.status || "present",
+      justification: data.justification ?? null,
+    }).returning();
+    return attendance;
   }
 
   async updateAttendance(id: number, data: Partial<Attendance>): Promise<Attendance> {
-    const attendance = this.attendances.get(id);
+    const [attendance] = await db.update(attendances)
+      .set(data)
+      .where(eq(attendances.id, id))
+      .returning();
     if (!attendance) throw new Error("Not found");
-    const updated = { ...attendance, ...data };
-    this.attendances.set(id, updated);
-    return updated;
+    return attendance;
   }
 
   async deleteAttendance(id: number): Promise<void> {
-    this.attendances.delete(id);
+    await db.delete(attendances).where(eq(attendances.id, id));
   }
 
   async getAttendanceStats(userId: string, disciplineId: number) {
-    const attendances = await this.getAttendances(userId, disciplineId);
-    const total = attendances.length;
-    const present = attendances.filter(a => a.status === "present").length;
-    const absent = attendances.filter(a => a.status === "absent").length;
-    const justified = attendances.filter(a => a.status === "justified").length;
+    const attendanceList = await this.getAttendances(userId, disciplineId);
+    const total = attendanceList.length;
+    const present = attendanceList.filter(a => a.status === "present").length;
+    const absent = attendanceList.filter(a => a.status === "absent").length;
+    const justified = attendanceList.filter(a => a.status === "justified").length;
     const attendance_rate = total > 0 ? Math.round((present / total) * 100 * 100) / 100 : 0;
     
     return { total, present, absent, justified, attendance_rate };
   }
 }
 
-export const storage = new MemStorage();
+// Exportar instância do DatabaseStorage em vez de MemStorage
+export const storage = new DatabaseStorage();
