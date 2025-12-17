@@ -3,6 +3,7 @@ import session from "express-session";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { waitForDatabase } from "./db";
 
 const app = express();
 const httpServer = createServer(app);
@@ -10,15 +11,6 @@ const httpServer = createServer(app);
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
-    session?: any;
-  }
-}
-
-declare global {
-  namespace Express {
-    interface Request {
-      session?: any;
-    }
   }
 }
 
@@ -79,6 +71,16 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Aguardar o banco de dados estar disponível antes de iniciar
+  console.log("[Server] Aguardando banco de dados...");
+  try {
+    await waitForDatabase(15, 2000); // 15 tentativas, 2 segundos entre cada
+    console.log("[Server] Banco de dados pronto!");
+  } catch (error) {
+    console.error("[Server] Falha ao conectar ao banco de dados:", error);
+    process.exit(1);
+  }
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
