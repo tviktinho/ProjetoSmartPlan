@@ -64,13 +64,16 @@ export default function SignupPage() {
       }
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    onSuccess: async (data) => {
+      // Atualiza o cache imediatamente com os dados do usuário
+      queryClient.setQueryData(["/api/auth/user"], data);
+      // Aguarda a invalidação completar antes de navegar
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({
         title: "Conta criada com sucesso!",
         description: "Bem-vindo à Agenda UFU.",
       });
-      setTimeout(() => navigate("/"), 500);
+      navigate("/");
     },
     onError: (error: any) => {
       toast({
@@ -83,8 +86,9 @@ export default function SignupPage() {
 
   const onSubmit = (data: SignupFormData) => {
     setIsLoading(true);
-    signupMutation.mutate(data);
-    setTimeout(() => setIsLoading(false), 1000);
+    signupMutation.mutate(data, {
+      onSettled: () => setIsLoading(false),
+    });
   };
 
   return (

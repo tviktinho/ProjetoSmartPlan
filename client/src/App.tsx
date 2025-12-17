@@ -65,9 +65,10 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
 }
 
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, isFetching } = useAuth();
 
-  if (isLoading) {
+  // Aguarda enquanto está carregando OU buscando dados atualizados
+  if (isLoading || isFetching) {
     return <LoadingScreen />;
   }
 

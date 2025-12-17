@@ -58,13 +58,16 @@ export default function LoginPage() {
       }
       return response.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+    onSuccess: async (data) => {
+      // Atualiza o cache imediatamente com os dados do usuário
+      queryClient.setQueryData(["/api/auth/user"], data);
+      // Aguarda a invalidação completar antes de navegar
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
       toast({
         title: "Bem-vindo!",
         description: "Login realizado com sucesso.",
       });
-      setTimeout(() => navigate("/"), 500);
+      navigate("/");
     },
     onError: (error: any) => {
       toast({
@@ -77,8 +80,9 @@ export default function LoginPage() {
 
   const onSubmit = (data: LoginFormData) => {
     setIsLoading(true);
-    loginMutation.mutate(data);
-    setTimeout(() => setIsLoading(false), 1000);
+    loginMutation.mutate(data, {
+      onSettled: () => setIsLoading(false),
+    });
   };
 
   return (
