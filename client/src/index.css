@@ -173,6 +173,18 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+
+  /* Esconde o cursor de texto em elementos não editáveis */
+  *:not(input):not(textarea):not([contenteditable="true"]) {
+    caret-color: transparent;
+  }
+
+  /* Mantém o cursor visível em inputs e textareas */
+  input,
+  textarea,
+  [contenteditable="true"] {
+    caret-color: auto;
+  }
 }
 
 /**
