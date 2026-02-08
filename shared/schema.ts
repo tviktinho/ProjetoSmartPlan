@@ -132,20 +132,6 @@ export const meetings = pgTable("meetings", {
   videoCallUrl: varchar("video_call_url"),
   notesUrl: varchar("notes_url"),
   status: varchar("status", { length: 20 }).default("scheduled"), // 'scheduled', 'ongoing', 'completed', 'cancelled'
-  isCancelled: boolean("is_cancelled").default(false),
-  cancellationReason: text("cancellation_reason"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-// Attendance/Absences table (faltas em aulas)
-export const attendances = pgTable("attendances", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  disciplineId: integer("discipline_id").notNull().references(() => disciplines.id, { onDelete: "cascade" }),
-  meetingId: integer("meeting_id").references(() => meetings.id, { onDelete: "set null" }),
-  attendanceDate: date("attendance_date").notNull(),
-  status: varchar("status", { length: 20 }).notNull(), // 'present', 'absent', 'justified'
-  justification: text("justification"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -157,7 +143,6 @@ export const usersRelations = relations(users, ({ many }) => ({
   studyGoals: many(studyGoals),
   reminders: many(reminders),
   meetings: many(meetings),
-  attendances: many(attendances),
 }));
 
 export const disciplinesRelations = relations(disciplines, ({ one, many }) => ({
@@ -167,7 +152,6 @@ export const disciplinesRelations = relations(disciplines, ({ one, many }) => ({
   }),
   events: many(events),
   tasks: many(tasks),
-  attendances: many(attendances),
 }));
 
 export const eventsRelations = relations(events, ({ one }) => ({
@@ -210,7 +194,7 @@ export const remindersRelations = relations(reminders, ({ one }) => ({
   }),
 }));
 
-export const meetingsRelations = relations(meetings, ({ one, many }) => ({
+export const meetingsRelations = relations(meetings, ({ one }) => ({
   user: one(users, {
     fields: [meetings.userId],
     references: [users.id],
@@ -218,22 +202,6 @@ export const meetingsRelations = relations(meetings, ({ one, many }) => ({
   discipline: one(disciplines, {
     fields: [meetings.disciplineId],
     references: [disciplines.id],
-  }),
-  attendances: many(attendances),
-}));
-
-export const attendancesRelations = relations(attendances, ({ one }) => ({
-  user: one(users, {
-    fields: [attendances.userId],
-    references: [users.id],
-  }),
-  discipline: one(disciplines, {
-    fields: [attendances.disciplineId],
-    references: [disciplines.id],
-  }),
-  meeting: one(meetings, {
-    fields: [attendances.meetingId],
-    references: [meetings.id],
   }),
 }));
 
@@ -265,10 +233,6 @@ export const insertMeetingSchema = createInsertSchema(meetings).omit({
   id: true,
   createdAt: true,
 });
-export const insertAttendanceSchema = createInsertSchema(attendances).omit({
-  id: true,
-  createdAt: true,
-});
 
 // Types
 export type UpsertUser = typeof users.$inferInsert;
@@ -291,6 +255,3 @@ export type Reminder = typeof reminders.$inferSelect;
 
 export type InsertMeeting = z.infer<typeof insertMeetingSchema>;
 export type Meeting = typeof meetings.$inferSelect;
-
-export type InsertAttendance = z.infer<typeof insertAttendanceSchema>;
-export type Attendance = typeof attendances.$inferSelect;
