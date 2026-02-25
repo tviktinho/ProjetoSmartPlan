@@ -245,7 +245,7 @@ export function MeetingDialog({
               id="recurring"
               checked={formData.isRecurring || false}
               onCheckedChange={(checked) =>
-                setFormData({ ...formData, isRecurring: checked })
+                setFormData({ ...formData, isRecurring: checked === true })
               }
             />
             <Label htmlFor="recurring">Reunião Recorrente</Label>

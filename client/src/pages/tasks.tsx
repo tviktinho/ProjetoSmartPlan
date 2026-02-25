@@ -263,8 +263,8 @@ export default function TasksPage() {
                               <Badge
                                 variant="secondary"
                                 style={{
-                                  backgroundColor: `${discipline.color}20`,
-                                  color: discipline.color,
+                                  backgroundColor: `${discipline.color ?? "#6B7280"}20`,
+                                  color: discipline.color ?? "#6B7280",
                                 }}
                               >
                                 {discipline.name}

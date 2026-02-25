@@ -240,33 +240,26 @@ export const attendancesRelations = relations(attendances, ({ one }) => ({
 // Zod schemas for validation
 export const insertUserSchema = createInsertSchema(users);
 export const insertDisciplineSchema = createInsertSchema(disciplines).omit({
-  id: true,
   createdAt: true,
 });
 export const insertEventSchema = createInsertSchema(events).omit({
-  id: true,
   createdAt: true,
 });
 export const insertTaskSchema = createInsertSchema(tasks).omit({
-  id: true,
   createdAt: true,
   completedAt: true,
 });
 export const insertStudyGoalSchema = createInsertSchema(studyGoals).omit({
-  id: true,
   createdAt: true,
 });
 export const insertReminderSchema = createInsertSchema(reminders).omit({
-  id: true,
   createdAt: true,
   completedAt: true,
 });
 export const insertMeetingSchema = createInsertSchema(meetings).omit({
-  id: true,
   createdAt: true,
 });
 export const insertAttendanceSchema = createInsertSchema(attendances).omit({
-  id: true,
   createdAt: true,
 });
 

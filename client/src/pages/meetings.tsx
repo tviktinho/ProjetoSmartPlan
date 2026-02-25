@@ -61,7 +61,7 @@ function MeetingsPage() {
   const filteredMeetings = meetings
     .filter((m: Meeting) => {
       const matchType = filterType === "all" || m.meetingType === filterType;
-      const matchStatus = filterStatus === "all" || m.status === filterStatus;
+      const matchStatus = filterStatus === "all" || (m.status ?? "scheduled") === filterStatus;
       return matchType && matchStatus;
     })
     .sort((a: Meeting, b: Meeting) => {
@@ -81,7 +81,7 @@ function MeetingsPage() {
     return labels[type] || type;
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: string | null) => {
     switch (status) {
       case "scheduled":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
@@ -96,14 +96,14 @@ function MeetingsPage() {
     }
   };
 
-  const getStatusLabel = (status: string) => {
+  const getStatusLabel = (status: string | null) => {
     const labels: Record<string, string> = {
       scheduled: "Agendada",
       ongoing: "Em Andamento",
       completed: "Concluída",
       cancelled: "Cancelada",
     };
-    return labels[status] || status;
+    return labels[status ?? ""] || status || "scheduled";
   };
 
   const handleEditMeeting = (meeting: Meeting) => {
@@ -183,10 +183,10 @@ function MeetingsPage() {
                       </div>
                       <span
                         className={`px-2 py-1 rounded text-xs font-semibold ${getStatusColor(
-                          meeting.status
+                          meeting.status ?? "scheduled"
                         )}`}
                       >
-                        {getStatusLabel(meeting.status)}
+                        {getStatusLabel(meeting.status ?? "scheduled")}
                       </span>
                     </div>
 

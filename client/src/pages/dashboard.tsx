@@ -1,5 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { format, isToday, isTomorrow, parseISO, addDays } from "date-fns";
+import {
+  format,
+  isToday,
+  isTomorrow,
+  parseISO,
+  addDays,
+  startOfWeek,
+  endOfWeek,
+  isWithinInterval,
+} from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   CheckSquare,
@@ -102,6 +111,20 @@ export default function Dashboard() {
   const completedTasks = tasks.filter((t) => t.status === "completed");
   const completionRate = tasks.length > 0 ? Math.round((completedTasks.length / tasks.length) * 100) : 0;
 
+  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
+  const weeklyTasks = tasks.filter((task) => {
+    if (!task.dueDate) return false;
+    const dueDate = parseISO(task.dueDate);
+    return isWithinInterval(dueDate, { start: weekStart, end: weekEnd });
+  });
+  const weeklyCompletedTasks = weeklyTasks.filter((task) => task.status === "completed");
+  const weeklyCompletionRate =
+    weeklyTasks.length > 0
+      ? Math.round((weeklyCompletedTasks.length / weeklyTasks.length) * 100)
+      : 0;
+  const isWeeklyComplete = weeklyTasks.length > 0 && weeklyCompletionRate === 100;
+
   const today = new Date();
   const nextWeek = addDays(today, 7);
   const upcomingEvents = events
@@ -160,6 +183,38 @@ export default function Dashboard() {
           loading={tasksLoading}
         />
       </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-semibold flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 text-primary" />
+            Desempenho Semanal
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {tasksLoading ? (
+            <>
+              <Skeleton className="h-2 w-full" />
+              <Skeleton className="h-4 w-48" />
+            </>
+          ) : (
+            <>
+              <Progress
+                value={weeklyCompletionRate}
+                className={`h-3 ${isWeeklyComplete ? "[&>div]:bg-green-500" : "[&>div]:bg-destructive"}`}
+              />
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <span>
+                  {weeklyCompletedTasks.length} de {weeklyTasks.length} tarefas concluídas na semana
+                </span>
+                <span className={isWeeklyComplete ? "text-green-500 font-medium" : "text-destructive font-medium"}>
+                  {weeklyCompletionRate}%
+                </span>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>
