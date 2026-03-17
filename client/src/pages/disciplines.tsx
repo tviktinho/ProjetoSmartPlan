@@ -1,3 +1,4 @@
+import { ExtratorPlanoEnsino } from "@/components/extrator_plano_ensino";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Plus, BookOpen, Pencil, Trash2, User, Calendar } from "lucide-react";
@@ -96,6 +97,9 @@ export default function DisciplinesPage() {
           Nova Disciplina
         </Button>
       </div>
+
+      {/* COMPONENTE DA IA ADICIONADO AQUI */}
+      <ExtratorPlanoEnsino />
 
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
